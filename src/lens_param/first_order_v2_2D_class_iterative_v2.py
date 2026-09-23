@@ -28,8 +28,8 @@ class optical_system:
         M_internal[bool]=torch.mm(original,component)
         self.M=M_internal
 
-    def add_aperature(self,z_aperature,radius):
-        bool=(self.z>=z_aperature)&(self.z<z_aperature+self.dz)
+    def add_aperture(self,z_aperture,radius):
+        bool=(self.z>=z_aperture)&(self.z<z_aperture+self.dz)
         self.app[bool]=radius
         
 
@@ -113,9 +113,9 @@ opt.rays_init_cone(15,100)
 
 ### optical configuration -- SEM -- 2 condenser setup
 opt.add_lens(0.2,0.2)
-opt.add_aperature(0.6,0.03)
+opt.add_aperture(0.6,0.03)
 opt.add_lens(0.8,0.07)
-opt.add_aperature(1.3,0.05)
+opt.add_aperture(1.3,0.05)
 opt.add_lens(1.5,0.14)
 opt.plot(0.5)
 
