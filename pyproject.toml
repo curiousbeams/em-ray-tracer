@@ -1,27 +1,50 @@
-[project]
-name = "lens-param"
-version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
-requires-python = ">=3.14"
-dependencies = ["numpy","torch","torchvision","matplotlib","pyvista","time"]
-
-[project.scripts]
-lens-param = "lens_param:main"
-
 [build-system]
 requires = ["uv_build>=0.12.10,<0.13.0"]
 build-backend = "uv_build"
 
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
+[project]
+name = "em-ray-tracer"
+version = "0.1.0"
+description = "Differentiable (torch) electron ray tracing: transfer matrices, field solvers, and aberration fitting."
+keywords = ["EM", "TEM", "STEM", "SEM", "electron optics", "ray tracing", "aberrations"]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>2",
+  "torch>=2.7.0",
+  "matplotlib",
+]
 
-[tool.uv.sources]
-torch = [
-  { index = "pytorch-cpu" },
+[project.optional-dependencies]
+viz = [
+  "pyvista",
 ]
-torchvision = [
-  { index = "pytorch-cpu" },
+
+[dependency-groups]
+test = [
+    "pytest>=8.3.5",
+    "pytest-cov>=7.0.0",
 ]
+dev = [
+    { include-group = "test" },
+    "jupyterlab>=4.4.0",
+    "pre-commit>=4.2.0",
+    "ruff>=0.11.5",
+]
+
+[tool.pytest.ini_options]
+addopts = [
+    "--import-mode=importlib",
+]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 99
+extend-exclude = ["scripts/legacy"]  # kept verbatim for comparison
+
+[tool.ruff.lint]
+select = ["E4","E7","E9","F","I"]
+exclude = ["*.ipynb"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["I001"]
