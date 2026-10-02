@@ -33,4 +33,4 @@ system["C2"].learn("power")
 tracer.optimize(ImagePlane(target=1.2), num_iters=10)
 ```
 
-New to the code? Work through [docs/walkthrough.md](docs/walkthrough.md), a self-guided tour with questions and answers. See `examples/` for runnable scripts, and [docs/architecture.md](docs/architecture.md) for the design reference and the roadmap. The original scripts are kept for comparison in `scripts/legacy/`.
+New to the code? Work through [docs/walkthrough.md](docs/walkthrough.md), a self-guided tour with questions and answers. See `examples/` for runnable scripts, [docs/architecture.md](docs/architecture.md) for the design reference, and [docs/roadmap.md](docs/roadmap.md) for where the project is headed. The original scripts are kept for comparison in `scripts/legacy/`.

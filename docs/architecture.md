@@ -234,8 +234,10 @@ The stubs raise `NotImplementedError`, and `tests/test_stubs.py` holds the tests
 2. **`ParaxialEquations.bind`** (`solvers/ode.py`). This is the lab-frame paraxial equation, written out in the docstring. It is checked against the Glaser closed form.
 3. **`FieldLens.local_transfer_map`** (`components/field_lenses.py`). Integrate the principal rays g and h, then add the Larmor rotation. The test is that the TM solver matches the ODE solver.
 4. **Second-order maps.** `TransferMap.compose` for `higher`, and second-order maps for field lenses. Chromatic aberration lands here.
-5. **`LaplaceExpansion.evaluate` and `NonParaxialEquations.bind`**, the third-order field and the full equations. The payoff is fitting C30 of a Glaser lens and comparing it with its known closed form.
+5. **`LaplaceExpansion.evaluate` and `NonParaxialEquations.bind`**, the third-order field and the full equations. The payoff is fitting C30 of a Glaser lens and comparing it with its known closed form. Build `LaplaceExpansion` as the ν = 0 case of the general `MultipoleField` element (milestone M2 in the [roadmap](roadmap.md)), which also covers deflectors, stigmators and correctors.
 6. **`SampledAxialField` and `FieldMap3D`**, plus the Lorentz/Boris solver, for FEM fields.
+
+For the longer view (exact tracers, external fields, full 3D placement, and aberration analysis matching GPT's), see [roadmap.md](roadmap.md).
 
 ## Adding things
 
