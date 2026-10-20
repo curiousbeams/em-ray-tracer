@@ -7,6 +7,7 @@ system of thin elements already traces identically under either solver.
 """
 
 import math
+import torch
 from abc import ABC, abstractmethod
 from typing import Self
 
@@ -17,7 +18,8 @@ from em_ray_tracer.solvers.base import SolverBase
 from em_ray_tracer.solvers.integrators import RHS, rk4_step
 from em_ray_tracer.solvers.params import IntegratorParams, IntegratorParamsType
 from em_ray_tracer.transfer_map import TransferMap
-
+from em_ray_tracer.rays import X, XP, Y, YP
+from em_ray_tracer.constants import DTYPE, lorentz_factor, relativistic_potential,ETA
 
 class EquationsOfMotion(ABC):
     """Right-hand side of the ray equation in the z-domain, on the state [x, x', y, y', delta].
@@ -49,9 +51,53 @@ class ParaxialEquations(EquationsOfMotion):
     Substituting x + iy = w exp(i theta), with theta' = s B / 2, recovers the rotating-frame
     equation above. Check against the Glaser closed form (tests/test_stubs.py).
     """
-
     def bind(self, component: FieldComponent, voltage: float) -> RHS:
-        raise NotImplementedError("ParaxialEquations.bind")
+
+        match component.field.kind :
+            case "electrostatic":
+                ### extract E potential info
+                phi=lambda z : voltage*component.axial_forward(z)
+                phi1=lambda z : voltage*component.axial_derivative(1,z)
+                phi2=lambda z : voltage*component.axial_derivative(2,z)
+
+                
+                def dudz(z: torch.Tensor,u: torch.Tensor)->torch.Tensor:
+                    g=lorentz_factor(phi(z))
+                    ph=relativistic_potential(phi(z))
+                    p1=phi1(z)
+                    p2=phi2(z)
+                    d=torch.zeros_like(u)
+
+                    d[...,X]=u[...,XP]
+                    d[...,Y]=u[...,YP]
+                    d[...,XP]=-g*p1/(2*ph)*u[...,XP]-g*p2/(4*ph)*u[...,X]
+                    d[...,YP]=-g*p1/(2*ph)*u[...,YP]-g*p2/(4*ph)*u[...,Y]
+                    return d
+
+            case "magnetic":
+                ### extract B potential info
+                phi_hat=relativistic_potential(voltage)
+                b=component.axial_forward
+                b1=lambda z : component.axial_derivative(1,z)
+                s=torch.as_tensor(ETA/math.sqrt(phi_hat),dtype=DTYPE)
+
+                def dudz(z: torch.Tensor,u: torch.Tensor)->torch.Tensor:
+                    b_=b(z)
+                    b1_=b1(z)
+                    d=torch.zeros_like(u)
+                    s_=s.to(u.device)
+
+                    d[...,X]=u[...,XP]
+                    d[...,Y]=u[...,YP]
+                    d[...,XP]=-s_*(b_*u[...,YP]+u[...,Y]*b1_/2)
+                    d[...,YP]=s_*(b_*u[...,XP]+u[...,X]*b1_/2)
+                    return d
+
+
+            case _ :
+                raise TypeError(f"Field kind is not known for paraxial equations, unknown field kind:{component.field.kind}")
+        
+        return dudz
 
 
 class NonParaxialEquations(EquationsOfMotion):
@@ -93,7 +139,7 @@ class ODESolver(SolverBase):
             return self.integrate(component, rays), None
         return component.apply(rays), component.transfer_map(voltage=rays.voltage)
 
-    def integrate(self, component: FieldComponent, rays: Rays) -> Rays:
+    def integrate(self, component: FieldComponent, rays: Rays,verbose: bool = False) -> Rays:
         if rays.voltage is None:
             raise ValueError("Field components need the beam energy: set Rays(voltage=...)")
         f = self.equations.bind(component, rays.voltage)
@@ -105,6 +151,7 @@ class ODESolver(SolverBase):
                 state = rays.state
                 for i in range(n):
                     state = rk4_step(f, z0 + i * h, state, h)
+                    if verbose and (i+1)%(n/100)==0 :print(f"\rprogress Runga-Kutta-4: {100*(i+1)/n:.0f}%/{n}", end="", flush=True)
             case _:
                 raise NotImplementedError(f"{type(self.integrator).__name__} integration")
         return rays.replace(state=state, z=z1)

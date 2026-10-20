@@ -12,9 +12,11 @@ em-widgets kit (kit/paraxial.js), with its tests in test/paraxial.test.js.
 """
 
 import torch
+import math
 
 from em_ray_tracer.fields.base import AxialField
 from em_ray_tracer.utils import as_parameter
+import sympy as sp
 
 
 class GlaserField(AxialField):
@@ -39,10 +41,20 @@ class GlaserField(AxialField):
     kind = "magnetic"
 
     def __init__(self, B0: float, a: float, extent: float = 10.0):
+        """z was decided to be relative to the component.z,
+        initially there were two z0 positions that could be disagreeing in case one of the two is optimized"""
         super().__init__()
-        self.B0 = as_parameter(B0)
+        self.b0 = as_parameter(B0)
         self.a = as_parameter(a)
         self.extent = extent
+        self.ddict={}
+
+        self.sym_z, self.sym_b0, self.sym_a=sp.symbols("z b0 a",real=True)
+        self.args=(self.sym_z, self.sym_b0, self.sym_a)
+        self.sym_b=self.sym_b0/(1+((self.sym_z)/self.sym_a)**2) #analytical glaser profile
+
+        
+
 
     @property
     def half_extent(self) -> float:
@@ -50,7 +62,15 @@ class GlaserField(AxialField):
 
     def derivative(self, n: int, z: torch.Tensor) -> torch.Tensor:
         """B0 a^2 f^(n)(z), with f^(n) the pole derivative in the module docstring."""
-        raise NotImplementedError("GlaserField.derivative: port poleDerivative (kit/paraxial.js)")
+        if n in self.ddict.keys(): #no unnecessary repeated calculations
+            nth_numeric=self.ddict[n]
+        else:
+            nth_expression=sp.diff(self.sym_b,self.sym_z,n)
+            nth_numeric=sp.lambdify(self.args,nth_expression,"torch")
+            self.ddict[n]=nth_numeric
+
+        return nth_numeric(z,self.b0,self.a)
+        
 
 
 class SchiskeField(AxialField):
@@ -74,9 +94,15 @@ class SchiskeField(AxialField):
 
     def __init__(self, k: float, a: float, extent: float = 10.0):
         super().__init__()
+        if abs(k)>=1:raise ValueError(f"Rays can't pass this lens, with |k|={abs(k)}>=1 the ray would reflect and not transmit.")
         self.k = as_parameter(k)
         self.a = as_parameter(a)
         self.extent = extent
+        self.ddict={}
+
+        self.sym_z, self.sym_k, self.sym_a=sp.symbols("z k a",real=True)
+        self.args=(self.sym_z, self.sym_k, self.sym_a)
+        self.sym_phi = (1 - self.sym_k**2 / (1 + (self.sym_z/self.sym_a)**2)) #analytical schiske profile w/out voltage
 
     @property
     def half_extent(self) -> float:
@@ -84,4 +110,12 @@ class SchiskeField(AxialField):
 
     def derivative(self, n: int, z: torch.Tensor) -> torch.Tensor:
         """(n == 0) phi0 - phi0 k^2 a^2 f^(n)(z). Note: returns the profile per volt of phi0."""
-        raise NotImplementedError("SchiskeField.derivative: port schiskeField (kit/paraxial.js)")
+        if n in self.ddict.keys(): #no unnecessary repeated calculations
+                nth_numeric=self.ddict[n]
+        else:           
+            nth_expression=sp.diff(self.sym_phi,self.sym_z,n)
+            nth_numeric=sp.lambdify(self.args,nth_expression,"torch")
+            self.ddict[n]=nth_numeric
+
+        return nth_numeric(z,self.k,self.a) #voltage dependance implemented inside (non)paraxial
+

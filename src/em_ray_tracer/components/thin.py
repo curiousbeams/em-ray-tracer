@@ -140,7 +140,7 @@ class DoubleDeflector(ComponentBase):
     ):
         super().__init__(z=z, **kwargs)
         if z_2 <= z:
-            raise ValueError(f"z_2 ({z_2}) must lie below z ({z})")
+            raise ValueError(f"z_2 ({z_2}) must lie above z ({z})") 
         self.tilt = as_parameter(tilt)
         self.beam_shift = as_parameter(beam_shift)
         self.pivot = as_parameter(pivot)

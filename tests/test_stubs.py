@@ -13,7 +13,7 @@ import pytest
 import torch
 
 from em_ray_tracer import FieldLens, ODESolver, OpticalSystem, Plane, Rays, TransferMatrixSolver
-from em_ray_tracer.constants import ETA, relativistic_potential
+from em_ray_tracer.constants import ETA, relativistic_potential,DTYPE
 from em_ray_tracer.fields import GlaserField, LaplaceExpansion
 
 stub = pytest.mark.xfail(raises=NotImplementedError, strict=True, reason="stub")
@@ -39,7 +39,7 @@ def glaser_exact(B0, a, voltage, z0, r0, rp0):
     return r
 
 
-@stub
+
 def test_glaser_derivatives_match_finite_differences():
     field = GlaserField(**GLASER)
     z = torch.linspace(-0.05, 0.05, 101, dtype=torch.float64)
@@ -48,16 +48,31 @@ def test_glaser_derivatives_match_finite_differences():
     torch.testing.assert_close(field.derivative(1, z), fd, rtol=1e-6, atol=1e-9)
 
 
-@stub
+
 def test_paraxial_glaser_matches_closed_form():
-    # compare in the rotating frame: the radius of an x-plane ray is rotation-invariant
-    lens = FieldLens.glaser(**GLASER, z=0.0)
-    system = OpticalSystem.from_components(lens, Plane(z=0.1, name="out"))
+    z_offset=1 #to also check for properly integrated component displacement
+    lens = FieldLens.glaser(**GLASER, z=z_offset)
     z0 = float(lens.z_start)
-    rays = Rays.from_state(torch.tensor([[1e-3, 0, 0, 0], [0, 1e-3, 0, 0]]), z=z0, voltage=VOLTAGE)
+    z1= float(lens.z_end) #must be at end-component since closed form continues including field while tracer doesn't
+    system = OpticalSystem.from_components(lens, Plane(z=z1, name="out"))
+
+    s = ETA / math.sqrt(relativistic_potential(VOLTAGE))
+    Bz0 = GLASER["B0"] / (1 + ((z0-z_offset) / GLASER["a"])**2)
+    state=[[1e-3, 0, 0, 0], [0, 1e-3, 0, 0],[1e-3,-1e-3,5e-3,1e-3]]
+    
+    rays = Rays.from_state(torch.tensor(state,dtype=DTYPE), z=z0, voltage=VOLTAGE)
     out = ODESolver.paraxial().trace(system, rays).planes["out"]
-    for i, (r0, rp0) in enumerate([(1e-3, 0.0), (0.0, 1e-3)]):
-        exact = glaser_exact(**GLASER, voltage=VOLTAGE, z0=z0, r0=r0, rp0=rp0)(0.1)
+    for i, (x0,xp0,y0,yp0) in enumerate(state):
+
+        ### correction closed_form to not discard imaginary part ###
+
+        thp = s * Bz0 / 2  #larmor rate of closed_form reference frame              
+        w0, wp0 = complex(x0, y0), complex(xp0, yp0)
+        wt0, wtp0 = w0, wp0 - 1j * thp * w0
+
+        ### end correction ###
+
+        exact = glaser_exact(**GLASER, voltage=VOLTAGE, z0=z0-z_offset, r0=wt0, rp0=wtp0)(z1-z_offset)
         assert torch.hypot(out.x[i], out.y[i]).item() == pytest.approx(abs(exact), rel=1e-8)
 
 
