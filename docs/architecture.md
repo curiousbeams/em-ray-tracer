@@ -202,7 +202,7 @@ A component implements `local_transfer_map(order, voltage)`, its map in its own 
 | thin | its map | its map / `apply` |
 | field (`FieldComponent`) | its thick-lens map | integrate `equations.bind(component, voltage)` with the integrator |
 
-So a system of thin elements traces identically under both solvers (tested), and a `FieldLens` works under either once its stubs are filled in.
+So a system of thin elements traces identically under both solvers (tested). A `FieldLens` traces under the paraxial `ODESolver` today; the transfer-matrix solver needs `FieldLens.local_transfer_map`, which is still a stub.
 
 ## Aberrations
 
@@ -228,10 +228,10 @@ The fit matches ray positions at a plane to `dw = 2 ∂chi/∂conj(omega)` by QR
 
 ## What is stubbed, in suggested order
 
-The stubs raise `NotImplementedError`, and `tests/test_stubs.py` holds the tests they must pass, marked `xfail(strict=True)`. When you implement one and its test starts passing, strict mode fails the run; delete that test's marker. The reference implementations are in the em-widgets kit (`kit/paraxial.js`, `kit/nonparaxial.js`), which has its own tests.
+The stubs raise `NotImplementedError`, and `tests/test_stubs.py` holds the tests they must pass, marked `xfail(strict=True)`. When you implement one and its test starts passing, strict mode fails the run; delete that test's marker. The reference implementations are in the em-widgets kit (`kit/paraxial.js`, `kit/nonparaxial.js`), which has its own tests. Tick each one off in [progress.md](progress.md).
 
-1. **`GlaserField.derivative` / `SchiskeField.derivative`** (`fields/analytic.py`). This is the closed-form nth derivative of 1/(a²+z²); the formula is in the module docstring.
-2. **`ParaxialEquations.bind`** (`solvers/ode.py`). This is the lab-frame paraxial equation, written out in the docstring. It is checked against the Glaser closed form.
+1. **Done: `GlaserField.derivative` / `SchiskeField.derivative`** (`fields/analytic.py`). The closed-form nth derivative of 1/(a²+z²); the module docstring derives it and shows a symbolic cross-check, and `tests/test_fields.py` checks it against nested autograd up to the 7th derivative.
+2. **Done: `ParaxialEquations.bind`** (`solvers/ode.py`). The lab-frame paraxial equation, written out in the docstring. It is checked against the Glaser closed form (`tests/test_stubs.py`) and, in `tests/test_paraxial.py`, against a weak electrostatic lens's power, the electrostatic Wronskian and the sense of the Larmor rotation.
 3. **`FieldLens.local_transfer_map`** (`components/field_lenses.py`). Integrate the principal rays g and h, then add the Larmor rotation. The test is that the TM solver matches the ODE solver.
 4. **Second-order maps.** `TransferMap.compose` for `higher`, and second-order maps for field lenses. Chromatic aberration lands here.
 5. **`LaplaceExpansion.evaluate` and `NonParaxialEquations.bind`**, the third-order field and the full equations. The payoff is fitting C30 of a Glaser lens and comparing it with its known closed form. Build `LaplaceExpansion` as the ν = 0 case of the general `MultipoleField` element (milestone M2 in the [roadmap](roadmap.md)), which also covers deflectors, stigmators and correctors.
