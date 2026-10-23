@@ -19,7 +19,7 @@ import torch
 
 from em_ray_tracer.components.base import ComponentBase
 from em_ray_tracer.fields.analytic import GlaserField, SchiskeField
-from em_ray_tracer.fields.base import AxialField
+from em_ray_tracer.fields.base import AxialField, FieldKind
 from em_ray_tracer.fields.sampled import SampledAxialField
 from em_ray_tracer.transfer_map import TransferMap
 
@@ -39,10 +39,10 @@ class FieldComponent(ComponentBase):
     def z_end(self) -> torch.Tensor:
         return self.z + self.field.half_extent
 
-    def axial_derivative(self, n: int, z: torch.Tensor | float) -> torch.Tensor:
+    def axial_derivative(self, n: int, z: torch.Tensor | float, kind_requested : FieldKind | None = None) -> torch.Tensor:
         """The n-th derivative of the axial profile at the absolute position ``z`` (n = 0 is
         the profile). The field's own coordinate is measured from the lens centre."""
-        return self.field.derivative(n, z - self.z)
+        return self.field.derivative(n, z - self.z, kind_requested=kind_requested)
 
     def config(self):
         raise NotImplementedError("config() for field components is not implemented yet")

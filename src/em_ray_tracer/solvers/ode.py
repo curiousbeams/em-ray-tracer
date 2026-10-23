@@ -87,6 +87,30 @@ class ParaxialEquations(EquationsOfMotion):
                         xp, -s * (B * yp + dB * y / 2), yp, s * (B * xp + dB * x / 2)
                     )
 
+            case "static-electromagnetic":
+                def f(z: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
+                    # the field's profile is per volt of the beam's accelerating voltage
+                    phi = voltage * component.axial_derivative(0, z, kind_requested="electrostatic")
+                    dphi = voltage * component.axial_derivative(1, z, kind_requested="electrostatic")
+                    d2phi = voltage * component.axial_derivative(2, z, kind_requested="electrostatic")
+                    gamma, phi_hat = lorentz_factor(phi), relativistic_potential(phi)
+                    
+                    B = component.axial_derivative(0, z, kind_requested="magnetic")
+                    dB = component.axial_derivative(1, z, kind_requested="magnetic")
+
+                    s = ETA / math.sqrt(phi_hat)
+                    damping = gamma * dphi / (2 * phi_hat)
+                    focusing = gamma * d2phi / (4 * phi_hat)
+                    x, xp, y, yp = state[..., X], state[..., XP], state[..., Y], state[..., YP]
+
+                    dxpdz=-damping * xp - focusing * x - s * (B * yp + dB * y / 2)
+                    dypdz=-damping * yp - focusing * y + s * (B * xp + dB * x / 2)
+                    
+                    return state_derivative(
+                        xp, dxpdz, yp, dypdz
+                    )
+
+
             case kind:
                 raise TypeError(f"No paraxial equations for a {kind!r} field")
         return f

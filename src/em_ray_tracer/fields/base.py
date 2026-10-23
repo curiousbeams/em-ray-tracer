@@ -7,6 +7,7 @@ import torch
 from torch import nn
 
 FieldKind = Literal["magnetic", "electrostatic"]
+ComponentFieldKind = Literal["magnetic", "electrostatic","static-electromagnetic"]
 
 
 class AxialField(nn.Module, ABC):
@@ -19,14 +20,14 @@ class AxialField(nn.Module, ABC):
     Profile parameters (B0, a, ...) are ``nn.Parameter`` so they can be optimized.
     """
 
-    kind: ClassVar[FieldKind]
+    kind: ClassVar[ComponentFieldKind]
 
     @abstractmethod
-    def derivative(self, n: int, z: torch.Tensor) -> torch.Tensor:
+    def derivative(self, n: int, z: torch.Tensor, kind_requested: FieldKind|None = None) -> torch.Tensor:
         """The n-th z-derivative of the axial profile at ``z`` (n = 0 is the profile)."""
 
-    def forward(self, z: torch.Tensor) -> torch.Tensor:
-        return self.derivative(0, z)
+    def forward(self, z: torch.Tensor, kind_requested: FieldKind|None = None) -> torch.Tensor:
+        return self.derivative(0, z, kind_requested=kind_requested)
 
     @property
     @abstractmethod
