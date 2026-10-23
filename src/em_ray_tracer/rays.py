@@ -48,7 +48,7 @@ class Rays:
 
     def __post_init__(self):
         state = torch.as_tensor(self.state)
-        if not isinstance(state,torch.Tensor) or state.dtype!=DTYPE:
+        if state.dtype != DTYPE:
             state = state.to(DTYPE)
         if state.ndim < 2 or state.shape[-1] != STATE_DIM:
             raise ValueError(
