@@ -815,7 +815,6 @@ dependencies = [
     { name = "matplotlib" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "sympy" },
     { name = "torch" },
 ]
 
@@ -842,7 +841,6 @@ requires-dist = [
     { name = "matplotlib" },
     { name = "numpy", specifier = ">2" },
     { name = "pyvista", marker = "extra == 'viz'" },
-    { name = "sympy", specifier = ">=1.14.0" },
     { name = "torch", specifier = ">=2.7.0" },
 ]
 provides-extras = ["viz"]
