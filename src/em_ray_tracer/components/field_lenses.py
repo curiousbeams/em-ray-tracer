@@ -39,15 +39,10 @@ class FieldComponent(ComponentBase):
     def z_end(self) -> torch.Tensor:
         return self.z + self.field.half_extent
 
-    def axial_derivative(self,n:int,z: torch.Tensor | float) -> torch.Tensor:
-        """returns the nth derivative at the absolute z of interest, 
-        uses the relative axial field derivative made absolute using component.z"""
-        return self.field.derivative(n=n,z=z-self.z)
-
-    def axial_forward(self,z: torch.Tensor | float) -> torch.Tensor:
-            """returns the nth derivative at the absolute z of interest, 
-                    uses the relative axial field derivative made absolute using component.z"""
-            return self.field.forward(z=z-self.z)
+    def axial_derivative(self, n: int, z: torch.Tensor | float) -> torch.Tensor:
+        """The n-th derivative of the axial profile at the absolute position ``z`` (n = 0 is
+        the profile). The field's own coordinate is measured from the lens centre."""
+        return self.field.derivative(n, z - self.z)
 
     def config(self):
         raise NotImplementedError("config() for field components is not implemented yet")
@@ -57,14 +52,14 @@ class FieldLens(FieldComponent):
     """A round lens defined by its axial field (magnetic or electrostatic)."""
 
     @classmethod
-    def glaser(cls, B0: float, a: float, *, extent: float = 10.0, **kwargs) -> Self:
+    def glaser(cls, B0: float, a: float, *, z: float, extent: float = 10.0, **kwargs) -> Self:
         """Magnetic lens with Glaser's bell-shaped field (see :class:`GlaserField`)."""
-        return cls(GlaserField(B0=B0, a=a, extent=extent), **kwargs)
+        return cls(GlaserField(B0=B0, a=a, extent=extent), z=z, **kwargs)
 
     @classmethod
-    def schiske(cls, k: float, a: float, *, extent: float = 10.0, **kwargs) -> Self:
+    def schiske(cls, k: float, a: float, *, z: float, extent: float = 10.0, **kwargs) -> Self:
         """Electrostatic einzel lens with Schiske's potential (see :class:`SchiskeField`)."""
-        return cls(SchiskeField(k=k, a=a, extent=extent), **kwargs)
+        return cls(SchiskeField(k=k, a=a, extent=extent), z=z, **kwargs)
 
     @classmethod
     def from_axial_samples(cls, z_samples, values, *, kind: str, z: float, **kwargs) -> Self:
