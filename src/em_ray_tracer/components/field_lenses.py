@@ -62,9 +62,9 @@ class FieldLens(FieldComponent):
         return cls(SchiskeField(k=k, a=a, extent=extent), z=z, **kwargs)
 
     @classmethod
-    def from_axial_samples(cls, z_samples, values, *, kind: str, z: float, **kwargs) -> Self:
+    def from_axial_samples(cls, z_samples, values, *, kind_set: FieldKind|tuple[FieldKind,...], z: float, **kwargs) -> Self:
         """From an on-axis profile exported by an FEM model (``z_samples`` relative to ``z``)."""
-        return cls(SampledAxialField(z_samples, values, kind), z=z, **kwargs)
+        return cls(SampledAxialField(z_samples, values, kind_set), z=z, **kwargs)
 
     def local_transfer_map(self, order: int = 1, voltage: float | None = None) -> TransferMap:
         raise NotImplementedError(

@@ -6,6 +6,8 @@ from typing import ClassVar, Literal
 import torch
 from torch import nn
 
+"""It was decided to use specify the actual fields by FieldKind while
+the type of field composition is defined by the ComponentFieldKind"""
 FieldKind = Literal["magnetic", "electrostatic"]
 ComponentFieldKind = Literal["magnetic", "electrostatic","static-electromagnetic"]
 
@@ -20,7 +22,7 @@ class AxialField(nn.Module, ABC):
     Profile parameters (B0, a, ...) are ``nn.Parameter`` so they can be optimized.
     """
 
-    kind: ClassVar[ComponentFieldKind]
+    kind: ComponentFieldKind
 
     @abstractmethod
     def derivative(self, n: int, z: torch.Tensor, kind_requested: FieldKind|None = None) -> torch.Tensor:
