@@ -40,7 +40,6 @@ from em_ray_tracer.fields.base import AxialField, FieldKind
 from em_ray_tracer.utils import as_parameter
 
 
-
 def pole_derivative(n: int, z: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
     """The n-th derivative of 1 / (a^2 + z^2) at ``z`` (module docstring)."""
     z = torch.as_tensor(z, dtype=a.dtype, device=a.device)

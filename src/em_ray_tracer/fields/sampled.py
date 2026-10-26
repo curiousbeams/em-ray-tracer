@@ -11,13 +11,14 @@ Two cases, in order of how soon they are likely to be needed:
   time-domain Lorentz solver (``SolverParams.Lorentz``, Boris pusher).
 """
 
-from typing import Self, Tuple, get_args
+from typing import Self, Tuple
 
 import numpy as np
 import torch
 
 from em_ray_tracer.constants import DTYPE
-from em_ray_tracer.fields.base import AxialField, Field3D, FieldKind, ComponentFieldKind          
+from em_ray_tracer.fields.base import AxialField, Field3D, FieldKind
+
 
 def cheb_derivative_coeffs(c):
     """c: (..., order+1) -> coefficients of d/dx in the same Chebyshev basis (last entry 0)."""
@@ -228,7 +229,7 @@ class SampledAxialField(AxialField):
 
 
     def derivative(self, n: int, z: torch.Tensor, kind_requested: FieldKind|None = None) -> torch.Tensor:
-        if kind_requested == None :
+        if kind_requested is None :
             if len(self.kind_set)!=1:
                 raise ValueError(f"kind_requested is required when multiple fields are defined: {self.kind_set}")
             kind_requested=self.kind_set[0]

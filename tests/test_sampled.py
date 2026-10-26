@@ -1,11 +1,10 @@
 """ """
 import numpy
 import torch
-import pytest
 
-from em_ray_tracer.fields.sampled import SampledAxialField
 from em_ray_tracer.components.field_lenses import FieldLens
 from em_ray_tracer.constants import DTYPE
+from em_ray_tracer.fields.sampled import SampledAxialField
 
 # --- General setup ---
 

@@ -1,7 +1,7 @@
 """Field interfaces: axial profiles of round lenses, and full 3D fields."""
 
 from abc import ABC, abstractmethod
-from typing import ClassVar, Literal
+from typing import Literal
 
 import torch
 from torch import nn
