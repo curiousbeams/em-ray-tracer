@@ -15,7 +15,7 @@ import torch
 from em_ray_tracer.components.base import ComponentBase
 from em_ray_tracer.components.field_lenses import FieldComponent
 from em_ray_tracer.constants import ETA, lorentz_factor, relativistic_potential
-from em_ray_tracer.rays import XP, YP, Rays, X, Y, DTYPE
+from em_ray_tracer.rays import DTYPE, XP, YP, Rays, X, Y
 from em_ray_tracer.solvers.base import SolverBase
 from em_ray_tracer.solvers.integrators import RHS, rk4_step
 from em_ray_tracer.solvers.params import IntegratorParams, IntegratorParamsType
