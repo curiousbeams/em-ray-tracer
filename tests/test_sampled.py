@@ -29,7 +29,7 @@ def test_sampled_axial_from_file():
     numpy.savetxt("tests/testdata_glaserschiske.csv",torch.stack([z_space,B_sampled,E_sampled],dim=-1),delimiter=delimiter)
 
     #extract sample field:
-    axial=SampledAxialField.from_file("tests/testdata_glaserschiske.csv",("magnetic","electrostatic"),delimiter=delimiter)
+    axial=SampledAxialField.from_file("tests/testdata_glaserschiske.csv",("magnetic","electrostatic"),delimiter=delimiter,grounded_check=False)
     #check match
     torch.testing.assert_close([lens_E.z_start,lens_E.z_end], [lens_B.z_start,lens_B.z_end])
     torch.testing.assert_close(axial.values[0], B_sampled)
@@ -38,13 +38,10 @@ def test_sampled_axial_from_file():
 def test_sampled_derivatives():
     n : int =1
     z_test=torch.linspace(lens_B.z_start,lens_B.z_end,300)
-    axial=FieldLens.from_axial_samples(z_samples=z_space-z0,values=[E_sampled,B_sampled],kind_set=("electrostatic","magnetic"),z=z0) 
+    axial=FieldLens.from_axial_samples(z_samples=z_space-z0,values=[E_sampled,B_sampled],kind_set=("electrostatic","magnetic"),z=z0,grounded_check=False) 
     B_dsample = axial.axial_derivative(n,z_test,kind_requested="magnetic")
     E_dsample = axial.axial_derivative(n,z_test,kind_requested="electrostatic")
 
     torch.testing.assert_close(B_dsample,lens_B.axial_derivative(n,z_test))
     torch.testing.assert_close(E_dsample,lens_E.axial_derivative(n,z_test))
-
-    
-    
 

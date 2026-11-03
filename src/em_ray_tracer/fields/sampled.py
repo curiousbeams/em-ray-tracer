@@ -24,7 +24,7 @@ from em_ray_tracer.interpolation import b_spline
 class SampledAxialField(AxialField):
     """An axial profile sampled at ``z_samples``."""
 
-    def __init__(self, z_samples: torch.Tensor, values: torch.Tensor, kind_set: FieldKind|Tuple[FieldKind,...]):
+    def __init__(self, z_samples: torch.Tensor, values: torch.Tensor, kind_set: FieldKind|Tuple[FieldKind,...],grounded_check = True):
         super().__init__()
         values = torch.as_tensor(np.asarray(values),dtype=DTYPE)
         z_samples=torch.as_tensor(z_samples,dtype=DTYPE)
@@ -44,7 +44,15 @@ class SampledAxialField(AxialField):
         if values.shape[0] != len(kind_set): 
             raise ValueError(f"number of field kinds specified does not agree with number of field values provided, values is {values.shape[0]} and kind_set is {len(kind_set)}")
 
-        
+        # --- check grounded fields ---
+        ignorable=torch.max(values,dim=-1).values/1000
+        if grounded_check and (any(values[:,0]>ignorable) or any(values[:,-1]>ignorable)):
+            raise ValueError("\nThe edges of supplied fields must go to 0\n"
+                             f"     the lower is now: {values[:,0]}\n"
+                             f"     the upper is now: {values[:,-1]}\n"
+                             "if you are aware of the error then this check can be ignored by passing grounded_check = False")
+
+
         # --- determine ComponentFieldKind ---
         match sorted(kind_set):
             case ("magnetic",) | ("electrostatic",):
@@ -73,7 +81,7 @@ class SampledAxialField(AxialField):
 
 
     @classmethod
-    def from_file(cls, path: str, kind_set: FieldKind | Tuple[FieldKind, ...], delimiter: str | None = None) -> Self:
+    def from_file(cls, path: str, kind_set: FieldKind | Tuple[FieldKind, ...], delimiter: str | None = None, grounded_check = True) -> Self:
         """this method accepts column txt or csv files with (z [m], values ... ), e.g. a COMSOL line-graph export.\n
         For multiple field kinds ensure that kind_set consists of a tuple of field names in the same order as the respective columns, example:
                 kind_set=("magnetic","electrostatic")
@@ -84,7 +92,7 @@ class SampledAxialField(AxialField):
 
         #invert field_samples from shape (n_z,n_fields) to (n_fields,n_z)
         field_samples = [list(row) for row in zip(*field_samples)]
-        return cls(z_samples, field_samples, kind_set)
+        return cls(z_samples, field_samples, kind_set, grounded_check = grounded_check)
 
 
     @property
