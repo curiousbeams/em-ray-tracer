@@ -9,7 +9,7 @@ from em_ray_tracer.fields.sampled import SampledAxialField
 # --- General setup ---
 
 GLASER = dict(B0=0.01, a=0.0075)
-SCHISKE= dict(k=0.5, a=0.0075)
+SCHISKE= dict(k=0.5, a=0.0075, voltage= 3000 )
 VOLTAGE = 1000.0
 z0=1
 delimiter=","

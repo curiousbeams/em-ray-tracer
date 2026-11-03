@@ -17,7 +17,7 @@ from em_ray_tracer.constants import (
     relativistic_potential,
 )
 
-A = 0.0075
+A, volt = 0.0075, 30e3
 
 
 def trace_through(lens, state, voltage):
@@ -32,8 +32,8 @@ def trace_through(lens, state, voltage):
 def test_electrostatic_wronskian_is_conserved():
     # sqrt(phi_hat) (x1 x2' - x2 x1') is invariant under the paraxial equation. A Schiske
     # lens's span is symmetric, so phi_hat is the same at both ends, and so is the Wronskian.
-    lens = FieldLens.schiske(k=0.6, a=A, z=0.0)
-    out = trace_through(lens, [[1e-4, 0, 0, 0], [0, 1e-3, 0, 0]], voltage=30e3)
+    lens = FieldLens.schiske(k=0.6, a=A,voltage=volt, z=0.0)
+    out = trace_through(lens, [[1e-4, 0, 0, 0], [0, 1e-3, 0, 0]], voltage=volt)
     wronskian = out.x[0] * out.xp[1] - out.x[1] * out.xp[0]
     assert wronskian.item() == pytest.approx(1e-4 * 1e-3, rel=1e-9)
 
@@ -44,13 +44,12 @@ def test_weak_schiske_lens_power():
     # lens R stays nearly constant, so a ray that enters parallel leaves with
     # -x'/x = integral of T + (1/2) phi_hat'/phi_hat at the exit. The last term is there
     # because the span ends where the field has not quite vanished.
-    voltage = 30e3
-    lens = FieldLens.schiske(k=0.1, a=A, z=0.0)
-    out = trace_through(lens, [[1e-3, 0, 0, 0]], voltage)
+    lens = FieldLens.schiske(k=0.1, a=A,voltage=volt, z=0.0)
+    out = trace_through(lens, [[1e-3, 0, 0, 0]], volt)
     z = torch.linspace(float(lens.z_start), float(lens.z_end), 200_001, dtype=DTYPE)
     with torch.no_grad():
-        phi = voltage * lens.axial_derivative(0, z)
-        dphi = voltage * lens.axial_derivative(1, z)
+        phi = volt + lens.axial_derivative(0, z)
+        dphi = lens.axial_derivative(1, z)
     gamma, phi_hat = lorentz_factor(phi), relativistic_potential(phi)
     T = 3 / 16 * (gamma * dphi / phi_hat) ** 2 - dphi**2 / (4 * REST_ENERGY_EV * phi_hat)
     expected = torch.trapezoid(T, z) + (gamma * dphi / phi_hat)[-1] / 2

@@ -9,7 +9,7 @@ import torch
 from em_ray_tracer import FieldLens
 from em_ray_tracer.fields import GlaserField, SchiskeField
 
-B0, K, A = 0.01, 0.6, 0.0075
+B0, K, A ,volt= 0.01, 0.6, 0.0075, 3000
 Z = torch.linspace(-0.05, 0.05, 41, dtype=torch.float64)
 
 
@@ -26,7 +26,7 @@ def autograd_derivative(profile, n, z):
     "field, profile",
     [
         (GlaserField(B0=B0, a=A), lambda z: B0 / (1 + (z / A) ** 2)),
-        (SchiskeField(k=K, a=A), lambda z: 1 - K**2 / (1 + (z / A) ** 2)),
+        (SchiskeField(k=K, a=A,voltage=volt), lambda z: volt*( - K**2 / (1 + (z / A) ** 2))),
     ],
     ids=["glaser", "schiske"],
 )
@@ -41,14 +41,14 @@ def test_derivatives_match_autograd(field, profile, n):
 
 def test_parameters_keep_their_documented_names():
     assert dict(GlaserField(B0=B0, a=A).named_parameters()).keys() == {"B0", "a"}
-    assert dict(SchiskeField(k=K, a=A).named_parameters()).keys() == {"k", "a"}
+    assert dict(SchiskeField(k=K, a=A,voltage=volt).named_parameters()).keys() == {"k", "a","voltage"}
     lens = FieldLens.glaser(B0=B0, a=A, z=0.0).learn("field.B0")
     assert lens.field.B0.requires_grad
 
 
 @pytest.mark.parametrize(
     "lens",
-    [FieldLens.glaser(B0=B0, a=A, z=0.0), FieldLens.schiske(k=K, a=A, z=0.0)],
+    [FieldLens.glaser(B0=B0, a=A, z=0.0), FieldLens.schiske(k=K, a=A,voltage=volt, z=0.0)],
     ids=["glaser", "schiske"],
 )
 def test_field_lenses_copy_and_save_after_use(lens):
@@ -62,4 +62,4 @@ def test_field_lenses_copy_and_save_after_use(lens):
 
 def test_schiske_rejects_a_reflecting_strength():
     with pytest.raises(ValueError, match="reflected"):
-        SchiskeField(k=1.0, a=A)
+        SchiskeField(k=1.0, a=A,voltage=volt)

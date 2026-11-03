@@ -65,9 +65,9 @@ class ParaxialEquations(EquationsOfMotion):
 
                 def f(z: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
                     # the field's profile is per volt of the beam's accelerating voltage
-                    phi = voltage * component.axial_derivative(0, z)
-                    dphi = voltage * component.axial_derivative(1, z)
-                    d2phi = voltage * component.axial_derivative(2, z)
+                    phi = voltage + component.axial_derivative(0, z)
+                    dphi = component.axial_derivative(1, z)
+                    d2phi = component.axial_derivative(2, z)
                     gamma, phi_hat = lorentz_factor(phi), relativistic_potential(phi)
                     damping = gamma * dphi / (2 * phi_hat)
                     focusing = gamma * d2phi / (4 * phi_hat)
@@ -90,9 +90,9 @@ class ParaxialEquations(EquationsOfMotion):
             case "static-electromagnetic":
                 def f(z: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
                     # the field's profile is per volt of the beam's accelerating voltage
-                    phi = voltage * component.axial_derivative(0, z, kind_requested="electrostatic")
-                    dphi = voltage * component.axial_derivative(1, z, kind_requested="electrostatic")
-                    d2phi = voltage * component.axial_derivative(2, z, kind_requested="electrostatic")
+                    phi = voltage + component.axial_derivative(0, z, kind_requested="electrostatic")
+                    dphi = component.axial_derivative(1, z, kind_requested="electrostatic")
+                    d2phi = component.axial_derivative(2, z, kind_requested="electrostatic")
                     gamma, phi_hat = lorentz_factor(phi), relativistic_potential(phi)
                     
                     B = component.axial_derivative(0, z, kind_requested="magnetic")

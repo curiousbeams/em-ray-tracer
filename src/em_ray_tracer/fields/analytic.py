@@ -109,7 +109,7 @@ class SchiskeField(AxialField):
 
     kind = "electrostatic"
 
-    def __init__(self, k: float, a: float, extent: float = 10.0):
+    def __init__(self, k: float, a: float, voltage: float, extent: float = 10.0):
         super().__init__()
         if abs(k) >= 1:
             raise ValueError(
@@ -118,6 +118,7 @@ class SchiskeField(AxialField):
             )
         self.k = as_parameter(k)
         self.a = as_parameter(a)
+        self.voltage=as_parameter(voltage)
         self.extent = extent
 
     @property
@@ -129,4 +130,4 @@ class SchiskeField(AxialField):
         if kind_requested and kind_requested != self.kind:
             raise ValueError(f"Schiske field only contains an electrostatic field, not a field of type {kind_requested}")
         dip = -(self.k**2) * self.a**2 * pole_derivative(n, z, self.a)
-        return 1 + dip if n == 0 else dip
+        return self.voltage*dip

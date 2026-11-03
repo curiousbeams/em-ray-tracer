@@ -57,9 +57,9 @@ class FieldLens(FieldComponent):
         return cls(GlaserField(B0=B0, a=a, extent=extent), z=z, **kwargs)
 
     @classmethod
-    def schiske(cls, k: float, a: float, *, z: float, extent: float = 10.0, **kwargs) -> Self:
+    def schiske(cls, k: float, a: float, voltage: float, *, z: float, extent: float = 10.0, **kwargs) -> Self:
         """Electrostatic einzel lens with Schiske's potential (see :class:`SchiskeField`)."""
-        return cls(SchiskeField(k=k, a=a, extent=extent), z=z, **kwargs)
+        return cls(SchiskeField(k=k, a=a, extent=extent,voltage=voltage), z=z, **kwargs)
 
     @classmethod
     def from_axial_samples(cls, z_samples, values, *, kind_set: FieldKind|tuple[FieldKind,...], z: float, **kwargs) -> Self:
