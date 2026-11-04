@@ -13,7 +13,7 @@ A ``FieldLens`` occupies [z - half_extent, z + half_extent]. Solvers handle it i
 The field's own z coordinate is measured from the lens centre ``z``.
 """
 
-from typing import Self
+from typing import Self, Callable
 
 import torch
 
@@ -22,6 +22,7 @@ from em_ray_tracer.fields.analytic import GlaserField, SchiskeField
 from em_ray_tracer.fields.base import AxialField, FieldKind
 from em_ray_tracer.fields.sampled import SampledAxialField
 from em_ray_tracer.transfer_map import TransferMap
+from em_ray_tracer.fields.expansion import LaplaceExpansion
 
 
 class FieldComponent(ComponentBase):
@@ -44,6 +45,20 @@ class FieldComponent(ComponentBase):
         the profile). The field's own coordinate is measured from the lens centre."""
         return self.field.derivative(n, z - self.z, kind_requested=kind_requested)
 
+    def axial_laplace(self, order: int = 3, longitudinal_order: int | None = None) -> Callable:
+            """The n-th order laplace expansion of the axial profile at the absolute z position within the complete system.
+            The field's own coordinate is measured from the lens centre.\n
+            Returns a function which takes (x,y,z) and returns the E, B fields\n
+            If the optional voltage is specified it returns E, B, phi_absolute instead"""
+
+            laplace=LaplaceExpansion(self.field, order = order, longitudinal_order = longitudinal_order)
+            def laplace_offset(x,y,z,voltage = None) -> tuple[torch.Tensor,torch.Tensor]|tuple[torch.Tensor,torch.Tensor,torch.Tensor]:
+                """returns E, B \n
+                If voltage (of the electron) is also specified it returns E, B, Phi instead"""
+                z_field=z-self.z
+                return laplace.evaluate(x,y,z_field,voltage=voltage)
+
+            return laplace_offset
     def config(self):
         raise NotImplementedError("config() for field components is not implemented yet")
 

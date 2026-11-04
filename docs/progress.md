@@ -8,8 +8,9 @@ A checklist of what is implemented, to tick off as work lands. [architecture.md]
 - [x] `ParaxialEquations.bind`: the lab-frame paraxial equations, magnetic and electrostatic (`tests/test_stubs.py`, `tests/test_paraxial.py`)
 - [ ] `FieldLens.local_transfer_map`: the thick-lens matrix from the principal rays (`test_weak_glaser_lens_approaches_thin_lens_power`, `test_thick_lens_matrix_matches_ode_trace`)
 - [ ] Second-order maps: `TransferMap.compose` for `higher`, and field-lens maps with chromatic aberration
-- [ ] `LaplaceExpansion.evaluate` and `NonParaxialEquations.bind`, built as the ν = 0 case of `MultipoleField` (`test_laplace_expansion_divergence_identity`); fit C30 of a Glaser lens against its closed form
+- [x] `LaplaceExpansion.evaluate` and `NonParaxialEquations.bind`, built as the ν = 0 case of `MultipoleField` (`test_laplace_expansion_divergence_identity`); fit C30 of a Glaser lens against its closed form
 - [x] `SampledAxialField`: B-spline, file formate checks (`tests/test_sampled.py`)
+- [ ] user-friendly arbitrary analytical field compatibility
 - [ ] `FieldMap3D`
 - [ ] Integrators: `dopri45_step` and `boris_push`
 - [ ] `config()` for field components, so systems with field lenses round-trip

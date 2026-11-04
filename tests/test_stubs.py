@@ -92,11 +92,9 @@ def test_thick_lens_matrix_matches_ode_trace():
     torch.testing.assert_close(tm, ode, rtol=1e-8, atol=1e-12)
 
 
-@stub
 def test_laplace_expansion_divergence_identity():
-    # truncating at N leaves div F = (-1)^N / (2^(2N) (N!)^2) r^(2N) F^(2N+1)(z)
     field = GlaserField(**GLASER)
-    expansion = LaplaceExpansion(field, order=3)
+    expansion = LaplaceExpansion(field, order=5, longitudinal_order=7)
     x = torch.tensor([1e-3], dtype=torch.float64, requires_grad=True)
     y = torch.tensor([5e-4], dtype=torch.float64, requires_grad=True)
     z = torch.tensor([2e-3], dtype=torch.float64, requires_grad=True)

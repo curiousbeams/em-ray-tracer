@@ -134,56 +134,7 @@ class NonParaxialEquations(EquationsOfMotion):
 
     def bind(self, component: FieldComponent, voltage: float) -> RHS:
         order=self.expansion_order
-        def phi(z,x,y):
-            phi_val=torch.ones_like(x)*voltage #to offset up to electron level
-            u=x**2+y**2
-            for k in range((order-1)//2+1):
-                phi_val+=(-1/4)**k * 1/(math.factorial(k))**2 *component.axial_derivative(2*k,z,kind_requested="electrostatic")*u**k
-            return phi_val
-        
-        def phi_x(z,x,y):
-            phi_val=torch.zeros_like(x)
-            u=x**2+y**2
-            for k in range((order+1)//2+1):
-                if k !=0: 
-                    phi_val+=(-1/4)**k * 1/(math.factorial(k))**2 *component.axial_derivative(2*k,z,kind_requested="electrostatic") * (2*x*k*u**(k-1))
-            return phi_val
-
-        def phi_y(z,x,y):
-            phi_val=torch.zeros_like(x)
-            u=x**2+y**2
-            for k in range((order+1)//2+1):
-                if k !=0: 
-                    phi_val+=(-1/4)**k * 1/(math.factorial(k))**2 *component.axial_derivative(2*k,z,kind_requested="electrostatic") * (2*y*k*u**(k-1))
-            return phi_val
-
-        def phi_z(z,x,y):
-            phi_val=torch.zeros_like(x)
-            u=x**2+y**2
-            for k in range((order+2)//2):
-                phi_val+=(-1/4)**k * 1/(math.factorial(k))**2 *component.axial_derivative(2*k+1,z,kind_requested="electrostatic")*u**k
-            return phi_val
-
-        def B_z(z,x,y):
-            b_val=torch.zeros_like(x)
-            u=x**2+y**2
-            for k in range((order-1)//2+1):
-                b_val+=(-1/4)**k * 1/(math.factorial(k))**2 *component.axial_derivative(2*k,z,kind_requested="magnetic")*u**k
-            return b_val
-
-        def B_x(z,x,y):
-            b_val=torch.zeros_like(x)
-            u=x**2+y**2
-            for k in range((order-1)//2+1):
-                b_val+=-(-1/4)**k * 1/(math.factorial(k))**2 *component.axial_derivative(2*k+1,z,kind_requested="magnetic")*u**(k)*x/(2*k+2)
-            return b_val
-
-        def B_y(z,x,y):
-            b_val=torch.zeros_like(x)
-            u=x**2+y**2
-            for k in range((order-1)//2+1):
-                b_val+=-(-1/4)**k * 1/(math.factorial(k))**2 *component.axial_derivative(2*k+1,z,kind_requested="magnetic")*u**(k)*y/(2*k+2)
-            return b_val
+        laplace=component.axial_laplace(order)      
 
 
         match component.field.kind:
@@ -192,18 +143,19 @@ class NonParaxialEquations(EquationsOfMotion):
                     x, xp, y, yp = state[..., X], state[..., XP], state[..., Y], state[..., YP]
 
                     w=torch.sqrt(1+xp**2+yp**2)
-                    p=phi(z,x,y)
+
+                    E,_,p=laplace(x,y,z,voltage=voltage)
+                    e_x=E[...,0]
+                    e_y=E[...,1]
+                    e_z=E[...,2]
+
+
                     gamma=lorentz_factor(p)
                     phi_hat=relativistic_potential(p)
 
-                    p_z=phi_z(z,x,y)
-                    p_x=phi_x(z,x,y)
-                    p_y=phi_y(z,x,y)
                     
-                    
-                    
-                    dxpdz=w**2*(gamma/(2*phi_hat))*(p_x-xp*p_z)
-                    dypdz=w**2*(gamma/(2*phi_hat))*(p_y-yp*p_z)
+                    dxpdz=w**2*(gamma/(2*phi_hat))*(e_x-xp*e_z)
+                    dypdz=w**2*(gamma/(2*phi_hat))*(e_y-yp*e_z)
                     
                     return state_derivative(
                         xp, dxpdz, yp, dypdz
@@ -218,13 +170,13 @@ class NonParaxialEquations(EquationsOfMotion):
                     x, xp, y, yp = state[..., X], state[..., XP], state[..., Y], state[..., YP]
 
                     w=torch.sqrt(1+xp**2+yp**2)
-                    
-                    b_z=B_z(z,x,y) #B
-                    b_x=B_x(z,x,y)  #-x*dB/2
-                    b_y=B_y(z,x,y)
-                    
-                    
-                    
+                                        
+                    _,B=laplace(x,y,z)
+
+                    b_x=B[...,0]
+                    b_y=B[...,1]
+                    b_z=B[...,2]
+
                     dxpdz= + s*w*(b_y*(1+xp**2)-b_z*yp-xp*yp*b_x)
                     dypdz= - s*w*(b_x*(1+yp**2)-b_z*xp-xp*yp*b_y)
 
@@ -238,24 +190,26 @@ class NonParaxialEquations(EquationsOfMotion):
                     x, xp, y, yp = state[..., X], state[..., XP], state[..., Y], state[..., YP]
 
                     
-                    w=torch.sqrt(1+xp**2+yp**2)
-                    p=phi(z,x,y)
+                    w=torch.sqrt(1+xp**2+yp**2)                    
+
+                    E,B,p=laplace(x,y,z,voltage=voltage)
+
+                    e_x=E[...,0]
+                    e_y=E[...,1]
+                    e_z=E[...,2]
+                    
+                    b_x=B[...,0]
+                    b_y=B[...,1]
+                    b_z=B[...,2]
+
                     gamma=lorentz_factor(p)
                     phi_hat=relativistic_potential(p)
                     s = ETA / torch.sqrt(phi_hat)
 
-                    p_z=phi_z(z,x,y)
-                    p_x=phi_x(z,x,y)
-                    p_y=phi_y(z,x,y)
-
-                    b_z=B_z(z,x,y)
-                    b_x=B_x(z,x,y)
-                    b_y=B_y(z,x,y)
                     
                     
-                    
-                    dxpdz=w**2*(gamma/(2*phi_hat))*(p_x-xp*p_z) + s*w*(b_y*(1+xp**2)-b_z*yp-xp*yp*b_x)
-                    dypdz=w**2*(gamma/(2*phi_hat))*(p_y-yp*p_z) - s*w*(b_x*(1+yp**2)-b_z*xp-xp*yp*b_y)
+                    dxpdz=w**2*(gamma/(2*phi_hat))*(e_x-xp*e_z) + s*w*(b_y*(1+xp**2)-b_z*yp-xp*yp*b_x)
+                    dypdz=w**2*(gamma/(2*phi_hat))*(e_y-yp*e_z) - s*w*(b_x*(1+yp**2)-b_z*xp-xp*yp*b_y)
 
                     return state_derivative(
                         xp, dxpdz, yp, dypdz
