@@ -12,7 +12,7 @@ def b_spline_basis_funs(t: torch.Tensor, x: torch.Tensor, p: int):
     """Values of the p+1 nonzero B-splines at each x.
     Returns span index k (m,) and values (m, p+1) for B_{k-p..k, p}(x)."""
     n_basis = len(t) - p - 1
-    k = (torch.searchsorted(t, x, right=True) - 1).clamp(p, n_basis - 1)
+    k = (torch.searchsorted(t, x.contiguous(), right=True) - 1).clamp(p, n_basis - 1)
 
     N = torch.ones(len(x), 1, dtype=x.dtype, device=x.device)
     left = [None] * (p + 1)
@@ -52,12 +52,14 @@ def b_spline_make_knots(z: torch.Tensor, p: int, n_spans: int) -> torch.Tensor:
 @staticmethod
 def b_spline(z: torch.Tensor, field_values: torch.Tensor,
                     order: int = 5, window_size: int = 10,
-                    extrapolate: str = "error"):
+                    lam: float = 0.0, penalty_order: int = 2,
+                    extrapolate: str = "clamp"):
     """
     B-spline fit. Returns f(n, z0) = n-th derivative at (batched) z0.
 
     order        spline degree p
     window_size  approx. samples per knot span (>= order + 1)
+    lam          P-spline smoothing strength (0 = plain regression spline)
     extrapolate  'error' | 'clamp' | 'polynomial'
     """
     p : int = order
@@ -82,12 +84,16 @@ def b_spline(z: torch.Tensor, field_values: torch.Tensor,
     # --- calculation of coefficients ---
     B = b_spline_design_matrix(t, z, p)
     A = B.T @ B
+    if lam > 0:
+        D = torch.diff(torch.eye(n_basis, dtype=z.dtype, device=z.device),
+                        n=penalty_order, dim=0)
+        A = A + lam * D.T @ D
     L, info = torch.linalg.cholesky_ex(A)
     if info.item() != 0:
         raise ValueError(
             "Normal equations are singular/ill-conditioned: too few samples "
             "per knot span (Schoenberg-Whitney). Increase window_size, "
-            "or use float64.")
+            "set lam > 0 or use float64.")
     coeff = torch.cholesky_solve(B.T @ y, L)          # (n_basis, C)
 
     lo, hi = t[0], t[-1]
