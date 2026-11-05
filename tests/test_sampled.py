@@ -8,16 +8,16 @@ from em_ray_tracer.fields.sampled import SampledAxialField
 
 # --- General setup ---
 
-GLASER = dict(B0=0.01, a=0.0075)
-SCHISKE= dict(k=0.5, a=0.0075, voltage= 3000 )
-VOLTAGE = 1000.0
-z0=1
+GLASER = dict(B0=0.1, a=4e-3)
+SCHISKE= dict(k=0.5, a=4e-3, voltage= 1e4 )
+VOLTAGE = 1e4
 delimiter=","
+z0=0
 
 # --- create sample field ---
-lens_B=FieldLens.glaser(**GLASER,z=z0)
-lens_E=FieldLens.schiske(**SCHISKE,z=z0)
-z_space=torch.linspace(lens_B.z_start,lens_B.z_end,10**4)#still needs fix
+lens_B=FieldLens.glaser(**GLASER,z=0)
+lens_E=FieldLens.schiske(**SCHISKE,z=0)
+z_space=torch.linspace(lens_B.z_start,lens_B.z_end,10**4)
 
 B_sampled=lens_B.axial_derivative(0,z_space)
 E_sampled=lens_E.axial_derivative(0,z_space)

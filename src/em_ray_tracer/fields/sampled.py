@@ -24,8 +24,10 @@ from em_ray_tracer.interpolation import b_spline
 class SampledAxialField(AxialField):
     """An axial profile sampled at ``z_samples``."""
 
-    def __init__(self, z_samples: torch.Tensor, values: torch.Tensor, kind_set: FieldKind|Tuple[FieldKind,...],grounded_check = True):
+    def __init__(self, z_samples: torch.Tensor, values: torch.Tensor, kind_set: FieldKind|Tuple[FieldKind,...],grounded_check = True,**B_kwargs):
         super().__init__()
+        self.B_kwargs=B_kwargs
+
         values = torch.as_tensor(np.asarray(values),dtype=DTYPE)
         z_samples=torch.as_tensor(z_samples,dtype=DTYPE)
 
@@ -45,8 +47,8 @@ class SampledAxialField(AxialField):
             raise ValueError(f"number of field kinds specified does not agree with number of field values provided, values is {values.shape[0]} and kind_set is {len(kind_set)}")
 
         # --- check grounded fields ---
-        ignorable=torch.max(values,dim=-1).values/1000
-        if grounded_check and (any(values[:,0]>ignorable) or any(values[:,-1]>ignorable)):
+        negligible=torch.max(values,dim=-1).values/1000
+        if grounded_check and (any(values[:,0]>negligible) or any(values[:,-1]>negligible)):
             raise ValueError("\nThe edges of supplied fields must go to 0\n"
                              f"     the lower is now: {values[:,0]}\n"
                              f"     the upper is now: {values[:,-1]}\n"
@@ -81,7 +83,7 @@ class SampledAxialField(AxialField):
 
 
     @classmethod
-    def from_file(cls, path: str, kind_set: FieldKind | Tuple[FieldKind, ...], delimiter: str | None = None, grounded_check = True) -> Self:
+    def from_file(cls, path: str, kind_set: FieldKind | Tuple[FieldKind, ...], delimiter: str | None = None, grounded_check = True,**B_kwargs) -> Self:
         """this method accepts column txt or csv files with (z [m], values ... ), e.g. a COMSOL line-graph export.\n
         For multiple field kinds ensure that kind_set consists of a tuple of field names in the same order as the respective columns, example:
                 kind_set=("magnetic","electrostatic")
@@ -92,7 +94,7 @@ class SampledAxialField(AxialField):
 
         #invert field_samples from shape (n_z,n_fields) to (n_fields,n_z)
         field_samples = [list(row) for row in zip(*field_samples)]
-        return cls(z_samples, field_samples, kind_set, grounded_check = grounded_check)
+        return cls(z_samples, field_samples, kind_set, grounded_check = grounded_check,**B_kwargs)
 
 
     @property
@@ -112,7 +114,7 @@ class SampledAxialField(AxialField):
         
         if not self.smoothed[kind_requested]:
             kind_index=self._row[kind_requested]
-            self.smoothed[kind_requested]=b_spline(self.z_samples,self.values[kind_index])
+            self.smoothed[kind_requested]=b_spline(self.z_samples,self.values[kind_index],**self.B_kwargs)
         
         return self.smoothed[kind_requested](n,z)
 

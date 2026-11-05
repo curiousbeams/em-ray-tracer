@@ -13,16 +13,16 @@ A ``FieldLens`` occupies [z - half_extent, z + half_extent]. Solvers handle it i
 The field's own z coordinate is measured from the lens centre ``z``.
 """
 
-from typing import Self, Callable
+from typing import Callable, Self
 
 import torch
 
 from em_ray_tracer.components.base import ComponentBase
 from em_ray_tracer.fields.analytic import GlaserField, SchiskeField
 from em_ray_tracer.fields.base import AxialField, FieldKind
+from em_ray_tracer.fields.expansion import LaplaceExpansion
 from em_ray_tracer.fields.sampled import SampledAxialField
 from em_ray_tracer.transfer_map import TransferMap
-from em_ray_tracer.fields.expansion import LaplaceExpansion
 
 
 class FieldComponent(ComponentBase):
@@ -80,6 +80,16 @@ class FieldLens(FieldComponent):
     def from_axial_samples(cls, z_samples, values, *, kind_set: FieldKind|tuple[FieldKind,...], z: float, grounded_check = True,**kwargs) -> Self:
         """From an on-axis profile exported by an FEM model (``z_samples`` relative to ``z``)."""
         return cls(SampledAxialField(z_samples, values, kind_set,grounded_check=grounded_check), z=z, **kwargs)
+
+    @classmethod
+    def from_file_with_axial_samples(cls, path: str, kind_set: FieldKind | tuple[FieldKind, ...],z: float, delimiter: str | None = None, grounded_check = True,**B_kwargs) -> Self:
+        """this method accepts column txt or csv files with (z [m], values ... ), e.g. a COMSOL line-graph export.\n
+        For multiple field kinds ensure that kind_set consists of a tuple of field names in the same order as the respective columns, example:
+                kind_set=("magnetic","electrostatic")
+        """
+        return cls(SampledAxialField.from_file(path, kind_set, delimiter, grounded_check = grounded_check,**B_kwargs),z=z)
+        
+       
 
     def local_transfer_map(self, order: int = 1, voltage: float | None = None) -> TransferMap:
         raise NotImplementedError(
