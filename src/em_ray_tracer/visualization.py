@@ -16,6 +16,9 @@ def plot_rays(
     coordinate: str = "x",
     color: str | None = "C2",
     linewidth: float = 0.8,
+    off_axis_scale="m",
+    on_axis_scale="m",
+    invert_orientation=False,
     **kwargs,
 ) -> plt.Axes:
     """Ray diagram (z vs x or y) from a trace recorded with ``record=True``.
@@ -33,11 +36,34 @@ def plot_rays(
     # keep the first dead sample so a ray visibly ends at the aperture plane
     was_alive = np.vstack([alive[:1], alive[:-1]])
     r = np.where(was_alive, r, np.nan)
-    ax.plot(z, r, color=color, linewidth=linewidth, **kwargs)
+    _UNIT_SCALE = {"m": 1.0, "mm": 1e3}
+
+    def _scale(unit: str) -> float:
+        try:
+            if unit is None:
+                return _UNIT_SCALE["m"]
+            return _UNIT_SCALE[unit]
+        except KeyError:
+            raise ValueError(f"Unknown scale {unit!r}, expected one of {list(_UNIT_SCALE)}") from None
+
+    # ---- inside the plotting function, replacing the if/else block ----
+    r = r * _scale(off_axis_scale)
+    z = z * _scale(on_axis_scale)
+
+    off_label = f"{coordinate} [{off_axis_scale}]"
+    on_label = f"z [{on_axis_scale}]"
+
+    if invert_orientation:           # z vertical, r horizontal
+        ax.plot(r, z, color=color, linewidth=linewidth, **kwargs)
+        if off_axis_scale : ax.set_xlabel(off_label)
+        if on_axis_scale : ax.set_ylabel(on_label)
+    else:                            # z horizontal, r vertical
+        ax.plot(z, r, color=color, linewidth=linewidth, **kwargs)
+        if on_axis_scale : ax.set_xlabel(on_label)
+        if off_axis_scale : ax.set_ylabel(off_label)
+    
     if system is not None:
         draw_components(system, ax)
-    ax.set_xlabel("z [m]")
-    ax.set_ylabel(f"{coordinate} [m]")
     return ax
 
 

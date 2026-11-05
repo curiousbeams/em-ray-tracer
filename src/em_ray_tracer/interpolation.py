@@ -53,7 +53,7 @@ def b_spline_make_knots(z: torch.Tensor, p: int, n_spans: int) -> torch.Tensor:
 def b_spline(z: torch.Tensor, field_values: torch.Tensor,
                     order: int = 5, window_size: int = 10,
                     lam: float = 0.0, penalty_order: int = 2,
-                    extrapolate: str = "clamp"):
+                    extrapolate: str = "error"):
     """
     B-spline fit. Returns f(n, z0) = n-th derivative at (batched) z0.
 
@@ -108,6 +108,8 @@ def b_spline(z: torch.Tensor, field_values: torch.Tensor,
                 raise ValueError("z0 outside sample range")
             if extrapolate == "clamp":
                 z0 = z0.clamp(lo, hi)
+            if extrapolate == "polynomial":
+                raise NotImplementedError()
 
         if n > p:
             out = torch.zeros(len(z0), y.shape[-1], dtype=z.dtype, device=z.device)

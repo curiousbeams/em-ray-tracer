@@ -83,9 +83,47 @@ class FieldLens(FieldComponent):
 
     @classmethod
     def from_file_with_axial_samples(cls, path: str, kind_set: FieldKind | tuple[FieldKind, ...],z: float, delimiter: str | None = None, grounded_check = True,**B_kwargs) -> Self:
-        """this method accepts column txt or csv files with (z [m], values ... ), e.g. a COMSOL line-graph export.\n
-        For multiple field kinds ensure that kind_set consists of a tuple of field names in the same order as the respective columns, example:
-                kind_set=("magnetic","electrostatic")
+        """Build a lens from axial field samples stored in a text or CSV file.
+
+        The file must have columns ``(z [m], values, ...)``, e.g. a COMSOL
+        line-graph export. A B-spline is fitted to each value column so that
+        smooth axial derivatives are available.
+
+        Parameters
+        ----------
+        path : str
+            Path to the column text or CSV file.
+        kind_set : FieldKind or tuple of FieldKind
+            Field kind of each value column, in the same order as the columns.
+            For several kinds pass a tuple, e.g.
+            ``("magnetic", "electrostatic")``.
+        z : float
+            Position of the lens along the optical axis [m].
+        delimiter : str, optional
+            Column delimiter used in the file.
+        grounded_check : bool, default True
+            Whether to check that the field is grounded at the ends of the
+            sampled range.
+        **B_kwargs
+            Passed to the B-spline fit. 
+            See "Other Parameters" below which adjust parameters related to the underlying B-spline interpolation.
+        
+        Other parameters
+        ----------
+        order : int, default 5
+            Spline degree p.
+            lower the order for fewer sample points
+        window_size : int, default 10
+            Approximate number of samples per knot span (>= ``order + 1``).
+        lam : float, default 0
+            P-spline smoothing strength (0 = plain regression spline).
+        extrapolate : {'error', 'clamp', 'polynomial'}, default error
+            Behaviour outside the sampled z-range.
+
+        Returns
+        -------
+        Self
+            The lens, whose axial derivatives follow the fitted spline.
         """
         return cls(SampledAxialField.from_file(path, kind_set, delimiter, grounded_check = grounded_check,**B_kwargs),z=z)
         

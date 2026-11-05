@@ -28,7 +28,7 @@ class IntegratorParams:
     class RK4:
         """Classical fixed-step Runge-Kutta, step ``dz`` [m]."""
 
-        dz: float = 1e-5
+        dz: float = 1e-4
         _name: ClassVar[str] = "rk4"
 
     @dataclass
