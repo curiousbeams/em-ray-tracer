@@ -5,7 +5,7 @@ Build it from its parts with ``from_models``, then ``trace``, ``fit_aberrations`
 """
 
 from collections.abc import Sequence
-from typing import Self
+from typing import Literal, Self
 
 import torch
 
@@ -62,7 +62,7 @@ class RayTracer:
 
     # region --- forward ---
 
-    def trace(self, record: bool = False) -> Trace:
+    def trace(self, record: bool | Literal["light"] = False) -> Trace:
         return self.solver.trace(self.system, self.rays, z_end=self.z_end, record=record)
 
     def gaussian_image(self) -> tuple[torch.Tensor, torch.Tensor]:

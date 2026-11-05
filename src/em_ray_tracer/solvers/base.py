@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, Literal, Self
 
 import torch
 
@@ -108,7 +108,7 @@ class SolverBase(ABC):
                 raise TypeError(f"Unknown solver params {params!r}")
 
     @abstractmethod
-    def propagate(self, component: ComponentBase, rays: Rays) -> tuple[Rays, TransferMap | None]:
+    def propagate(self, component: ComponentBase, rays: Rays, snapshots: list[Rays]|None = None ) -> tuple[Rays, TransferMap | None, list[Rays]|None]:
         """Cross ``component``; return the rays at its exit and its map (``None`` if it has
         none)."""
 
@@ -118,9 +118,10 @@ class SolverBase(ABC):
         rays: Rays,
         *,
         z_end: torch.Tensor | float | None = None,
-        record: bool = False,
-    ) -> Trace:
-        """Trace ``rays`` from ``rays.z`` to ``z_end`` (default: the last component)."""
+        record: bool | Literal["light"] = False
+) -> Trace:
+        """Trace ``rays`` from ``rays.z`` to ``z_end`` (default: the last component).
+        Use record = "light" if you only want the edges of elements traced"""
         from em_ray_tracer.system import Element, Gap
 
         current = rays
@@ -133,16 +134,23 @@ class SolverBase(ABC):
                 case Gap(z0, z1):
                     m = drift_map(z1 - z0)
                     current = current.replace(state=m.apply(current.state), z=z1)
+                    if record:
+                        snapshots.append(current)
                 case Element(component):
-                    current, m = self.propagate(component, current)
+                    if record is True:
+                        current, m , snapshots= self.propagate(component, current, snapshots=snapshots)
+                    elif record == "light":
+                        current, m ,_= self.propagate(component, current)
+                        snapshots.append(current)
+                    else:
+                        current, m ,_= self.propagate(component, current)
                     if isinstance(component, Plane):
                         planes[component.name] = current
             if total is not None and m is not None and not (m.higher or total.higher):
                 total = m @ total
             else:
                 total = None
-            if record:
-                snapshots.append(current)
+            
 
         return Trace(
             initial=rays,

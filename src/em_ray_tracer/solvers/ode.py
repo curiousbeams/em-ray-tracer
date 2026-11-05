@@ -241,12 +241,15 @@ class ODESolver(SolverBase):
     ) -> Self:
         return cls(NonParaxialEquations(expansion_order), integrator or IntegratorParams.RK4())
 
-    def propagate(self, component: ComponentBase, rays: Rays) -> tuple[Rays, TransferMap | None]:
+    def propagate(self, component: ComponentBase, rays: Rays, snapshots : list[Rays]|None=None) -> tuple[Rays, TransferMap | None,list[Rays]|None]:
         if isinstance(component, FieldComponent):
-            return self.integrate(component, rays), None
-        return component.apply(rays), component.transfer_map(voltage=rays.voltage)
+            return self.integrate(component, rays,snapshots=snapshots)
+        current=component.apply(rays)
+        if snapshots is not None : 
+            snapshots.append(current)
+        return current, component.transfer_map(voltage=rays.voltage),snapshots
 
-    def integrate(self, component: FieldComponent, rays: Rays) -> Rays:
+    def integrate(self, component: FieldComponent, rays: Rays, snapshots : list[Rays]|None=None) -> tuple[Rays, None, list[Rays] | None]:
         if rays.voltage is None:
             raise ValueError("Field components need the beam energy: set Rays(voltage=...)")
         f = self.equations.bind(component, rays.voltage)
@@ -258,9 +261,11 @@ class ODESolver(SolverBase):
                 state = rays.state
                 for i in range(n):
                     state = rk4_step(f, z0 + i * h, state, h)
+                    if snapshots is not None : 
+                        snapshots.append(rays.replace(state=state, z=z0+(i+1)*h))
             case _:
                 raise NotImplementedError(f"{type(self.integrator).__name__} integration")
-        return rays.replace(state=state, z=z1)
+        return rays.replace(state=state, z=z1), None, snapshots
 
     def __repr__(self) -> str:
         return f"ODESolver({type(self.equations).__name__}, {self.integrator})"

@@ -20,9 +20,12 @@ class TransferMatrixSolver(SolverBase):
             raise ValueError("order must be >= 1")
         self.order = order
 
-    def propagate(self, component: ComponentBase, rays: Rays) -> tuple[Rays, TransferMap | None]:
+    def propagate(self, component: ComponentBase, rays: Rays, snapshots: list[Rays]|None=None) -> tuple[Rays, TransferMap | None, list[Rays]|None]:
         m = component.transfer_map(order=self.order, voltage=rays.voltage)
-        return component.apply(rays, order=self.order), m
+        current=component.apply(rays, order=self.order)
+        if snapshots is not None: 
+            snapshots.append(current)
+        return current, m, snapshots
 
     def __repr__(self) -> str:
         return f"TransferMatrixSolver(order={self.order})"
