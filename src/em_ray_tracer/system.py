@@ -178,7 +178,8 @@ class OpticalSystem(nn.Module, OptimizerMixin):
         z_start: torch.Tensor | float,
         z_end: torch.Tensor | float | None = None,
         order: int = 1,
-        voltage: float | None = None,
+        voltage: float | None = None, 
+        r_interest : float | None = None
     ) -> TransferMap:
         """The composed map from ``z_start`` to ``z_end``. Every component must have one."""
         total = None
@@ -187,7 +188,7 @@ class OpticalSystem(nn.Module, OptimizerMixin):
                 case Gap(z0, z1):
                     m = drift_map(z1 - z0)
                 case Element(c):
-                    m = c.transfer_map(order=order, voltage=voltage)
+                    m = c.transfer_map(order=order, voltage=voltage,r_interest=r_interest)
                     if m is None:
                         raise ValueError(f"{c.name} is not a polynomial map; trace rays instead")
             total = m if total is None else m @ total
@@ -211,11 +212,21 @@ class OpticalSystem(nn.Module, OptimizerMixin):
         d = (-B / D).real
         return self.z_last + d, A + d * C
 
-    def focal_length(self, voltage: float | None = None) -> torch.Tensor:
+    def focal_length(self, voltage: float | None = None, **kwargs) -> torch.Tensor:
         """Complex image-side focal length -1 / (e^{i theta} C). Unchanged by drifts before
-        or after. Its modulus is |f| and its argument is the image rotation (mod pi)."""
+        or after. Its modulus is |f| and its argument is the image rotation (mod pi).
+        
+        parameters
+        ---------------
+        order : int , default 1
+            specifies the order of the (non)paraxial tracer
+        voltage : float | None, default None
+            specifies the voltage at which the transfermap is constructed
+        r_interest : float | None , default None
+            specifies the scale at which the transfermap is most accurate for non-linear components
+        """
         first = min(float(c.z_start.detach()) for c in self.components.values())
-        _, _, C, _ = self._complex_blocks(self.transfer_map(first, voltage=voltage))
+        _, _, C, _ = self._complex_blocks(self.transfer_map(first, voltage=voltage,**kwargs))
         return -1.0 / C
 
     @staticmethod

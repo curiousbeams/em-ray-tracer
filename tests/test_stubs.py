@@ -12,9 +12,14 @@ import math
 import pytest
 import torch
 
-from em_ray_tracer import FieldLens, ODESolver, OpticalSystem, Plane, Rays, TransferMatrixSolver
+from em_ray_tracer.components.field_lenses import FieldLens
+from em_ray_tracer.components.thin import Plane
 from em_ray_tracer.constants import DTYPE, ETA, relativistic_potential
 from em_ray_tracer.fields import GlaserField, LaplaceExpansion
+from em_ray_tracer.rays import Rays
+from em_ray_tracer.solvers.ode import ODESolver
+from em_ray_tracer.solvers.transfer_matrix import TransferMatrixSolver
+from em_ray_tracer.system import OpticalSystem
 
 stub = pytest.mark.xfail(raises=NotImplementedError, strict=True, reason="stub")
 
@@ -71,7 +76,7 @@ def test_paraxial_glaser_matches_closed_form():
         assert r == pytest.approx(abs(exact(z1 - z_offset)), rel=1e-8)
 
 
-@stub
+
 def test_weak_glaser_lens_approaches_thin_lens_power():
     # 1/f -> eta^2 B0^2 pi a / (8 phi_hat) as B0 -> 0
     a, B0 = 0.0075, 1e-3
@@ -82,13 +87,13 @@ def test_weak_glaser_lens_approaches_thin_lens_power():
     assert 1 / focal.abs().item() == pytest.approx(expected, rel=0.02)
 
 
-@stub
 def test_thick_lens_matrix_matches_ode_trace():
     lens = FieldLens.glaser(**GLASER, z=0.0)
     system = OpticalSystem.from_components(lens, Plane(z=0.1, name="out"))
-    rays = Rays.from_cone(1e-3, z=float(lens.z_start), voltage=VOLTAGE)
-    tm = TransferMatrixSolver().trace(system, rays).final.state
+    rays = Rays.from_cone(1e-1, z=float(lens.z_start), voltage=VOLTAGE)
+    tm = TransferMatrixSolver(order=3,r_interest=1e-9).trace(system, rays).final.state
     ode = ODESolver.paraxial().trace(system, rays).final.state
+
     torch.testing.assert_close(tm, ode, rtol=1e-8, atol=1e-12)
 
 

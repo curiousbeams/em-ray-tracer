@@ -216,7 +216,7 @@ class Biprism(ComponentBase):
     def local_transfer_map(self, order: int = 1, voltage: float | None = None) -> None:
         return None
 
-    def apply(self, rays: Rays, order: int = 1) -> Rays:
+    def apply(self, rays: Rays,**kwargs) -> Rays:
         # u: coordinate perpendicular to the wire, measured from the (possibly shifted) wire
         c, s = torch.cos(self.orientation), torch.sin(self.orientation)
         u = (rays.x - self.shift[0]) * c + (rays.y - self.shift[1]) * s
@@ -266,10 +266,10 @@ class Aperture(ComponentBase):
         t = ((outer2 - r2) / band).clamp(0, 1)
         return t * t * (3 - 2 * t)
 
-    def local_transfer_map(self, order: int = 1, voltage: float | None = None) -> TransferMap:
+    def local_transfer_map(self, order: int = 1, voltage: float | None = None,r : float | None = None) -> TransferMap:
         return TransferMap.identity(dtype=self.z.dtype, device=self.z.device)
 
-    def apply(self, rays: Rays, order: int = 1) -> Rays:
+    def apply(self, rays: Rays,**kwargs) -> Rays:
         t = self.transmission(rays)
         alive = rays.alive & (t > 0)
         if self.edge_width == 0:
@@ -287,5 +287,5 @@ class Plane(ComponentBase):
     def local_transfer_map(self, order: int = 1, voltage: float | None = None) -> TransferMap:
         return TransferMap.identity(dtype=self.z.dtype, device=self.z.device)
 
-    def apply(self, rays: Rays, order: int = 1) -> Rays:
+    def apply(self, rays: Rays, **kwargs) -> Rays:
         return rays.replace(z=self.z_end)

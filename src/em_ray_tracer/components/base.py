@@ -113,8 +113,9 @@ class ComponentBase(nn.Module, ABC):
         """The map across the element in its own aligned frame, or ``None`` if the element
         is not a polynomial map of the ray state (e.g. a biprism)."""
 
-    def transfer_map(self, order: int = 1, voltage: float | None = None) -> TransferMap | None:
+    def transfer_map(self, order: int = 1, voltage: float | None = None, r_interest: float | None = None) -> TransferMap | None:
         """The map in the lab frame: :meth:`local_transfer_map` conjugated by misalignment."""
+        self.r_interest=r_interest
         local = self.local_transfer_map(order=order, voltage=voltage)
         if local is None or not self.is_misaligned:
             return local
@@ -132,9 +133,9 @@ class ComponentBase(nn.Module, ABC):
             return True
         return bool(torch.any(self.shift != 0) or torch.any(self.tilt != 0))
 
-    def apply(self, rays: Rays, order: int = 1) -> Rays:
+    def apply(self, rays: Rays, order: int = 1, r_interest: float | None = None) -> Rays:
         """Propagate ``rays`` from ``z_start`` to ``z_end`` through this element."""
-        m = self.transfer_map(order=order, voltage=rays.voltage)
+        m = self.transfer_map(order=order, voltage=rays.voltage,r_interest=r_interest)
         if m is None:
             raise NotImplementedError(f"{type(self).__name__} must implement apply()")
         return rays.replace(state=m.apply(rays.state), z=self.z_end)

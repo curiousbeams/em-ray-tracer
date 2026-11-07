@@ -22,7 +22,9 @@ from em_ray_tracer.fields.analytic import GlaserField, SchiskeField
 from em_ray_tracer.fields.base import AxialField, FieldKind
 from em_ray_tracer.fields.expansion import LaplaceExpansion
 from em_ray_tracer.fields.sampled import SampledAxialField
+from em_ray_tracer.rays import Rays,STATE_DIM
 from em_ray_tracer.transfer_map import TransferMap
+from em_ray_tracer.system import OpticalSystem
 
 
 class FieldComponent(ComponentBase):
@@ -127,10 +129,31 @@ class FieldLens(FieldComponent):
         """
         return cls(SampledAxialField.from_file(path, kind_set, delimiter, grounded_check = grounded_check,**B_kwargs),z=z)
         
-       
 
     def local_transfer_map(self, order: int = 1, voltage: float | None = None) -> TransferMap:
-        raise NotImplementedError(
-            "FieldLens.local_transfer_map: integrate the principal rays g, h with the paraxial "
-            "ODE (see the module docstring), or trace this lens with ODESolver instead."
-        )
+        """Constructs local transfer map from the for principal rays.
+        order 1 uses paraxial while higher orders use non-paraxial laplace expansion, all use RK4.
+        
+        Higher order transfer maps may benefit from adjusting r in order to
+        asses around a relevant order of magnitude and prevent blow up."""
+        from em_ray_tracer.solvers.ode import ODESolver
+        
+        r=self.r_interest
+        principal=Rays.principal(z=float(self.z_start),voltage=voltage)
+        if r is not None:
+            scale=r
+            principal=principal.replace(state=scale*principal.state)
+        else:
+            scale=1
+
+        system=OpticalSystem.from_components(self)
+        
+        if order==1:
+            out_rays=ODESolver.paraxial().trace(system, principal).final.state
+        if order > 1:
+            out_rays=ODESolver.nonparaxial(expansion_order=order).trace(system, principal).final.state
+
+        out_states=torch.cat([out_rays[:,:STATE_DIM]/scale,torch.zeros(STATE_DIM).unsqueeze(0)])
+        local_map=TransferMap.from_affine(out_states.mT,torch.zeros(5))
+        return local_map
+        

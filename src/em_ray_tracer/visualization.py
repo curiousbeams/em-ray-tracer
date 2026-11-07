@@ -55,12 +55,16 @@ def plot_rays(
 
     if invert_orientation:           # z vertical, r horizontal
         ax.plot(r, z, color=color, linewidth=linewidth, **kwargs)
-        if off_axis_scale : ax.set_xlabel(off_label)
-        if on_axis_scale : ax.set_ylabel(on_label)
+        if off_axis_scale : 
+            ax.set_xlabel(off_label)
+        if on_axis_scale : 
+            ax.set_ylabel(on_label)
     else:                            # z horizontal, r vertical
         ax.plot(z, r, color=color, linewidth=linewidth, **kwargs)
-        if on_axis_scale : ax.set_xlabel(on_label)
-        if off_axis_scale : ax.set_ylabel(off_label)
+        if on_axis_scale : 
+            ax.set_xlabel(on_label)
+        if off_axis_scale : 
+            ax.set_ylabel(off_label)
     
     if system is not None:
         draw_components(system, ax)
