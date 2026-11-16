@@ -121,7 +121,7 @@ class SolverBase(ABC):
         record: bool | Literal["light"] = False
 ) -> Trace:
         """Trace ``rays`` from ``rays.z`` to ``z_end`` (default: the last component).
-        Use record = "light" if you only want the edges of elements traced"""
+        Use record = "light" if you only want the edges of elements tracked"""
         from em_ray_tracer.system import Element, Gap
 
         current = rays

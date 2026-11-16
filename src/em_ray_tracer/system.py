@@ -147,7 +147,8 @@ class OpticalSystem(nn.Module, OptimizerMixin):
             if c1 < lo - _TOL or c0 > hi + _TOL:
                 continue
             if c0 < lo - _TOL or c1 > hi + _TOL:
-                raise ValueError(f"{c.name} [{c0}, {c1}] straddles the span [{lo}, {hi}]")
+                raise ValueError(f"{c.name} [{c0}, {c1}] straddles the span [{lo}, {hi}],\n",
+                                 "if intentional, change the start/end values of the straddled component")
             if c0 < float(cursor.detach()) - _TOL:
                 raise ValueError(
                     f"{c.name} starts at {c0}, inside the previous component (ends at "

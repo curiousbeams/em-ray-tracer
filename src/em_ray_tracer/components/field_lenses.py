@@ -25,6 +25,7 @@ from em_ray_tracer.fields.sampled import SampledAxialField
 from em_ray_tracer.rays import STATE_DIM, Rays
 from em_ray_tracer.system import OpticalSystem
 from em_ray_tracer.transfer_map import TransferMap
+from em_ray_tracer.utils import as_parameter
 
 
 class FieldComponent(ComponentBase):
@@ -33,14 +34,29 @@ class FieldComponent(ComponentBase):
     def __init__(self, field: AxialField, *, z: float, **kwargs):
         super().__init__(z=z, **kwargs)
         self.field = field
+        self.z_start_rel_cut=None
+        self.z_end_rel_cut=None
 
     @property
     def z_start(self) -> torch.Tensor:
+        if self.z_start_rel_cut:
+            return self.z + self.z_start_rel_cut
         return self.z - self.field.half_extent
 
     @property
     def z_end(self) -> torch.Tensor:
+        if self.z_end_rel_cut:
+            return self.z + self.z_end_rel_cut
         return self.z + self.field.half_extent
+
+    @z_start.setter
+    def z_start(self,value) :
+        self.z_start_rel_cut=as_parameter(value)-self.z
+
+    @z_end.setter
+    def z_end(self,value) :
+        self.z_end_rel_cut=as_parameter(value)-self.z
+
 
     def axial_derivative(self, n: int, z: torch.Tensor | float, kind_requested : FieldKind | None = None) -> torch.Tensor:
         """The n-th derivative of the axial profile at the absolute position ``z`` (n = 0 is
