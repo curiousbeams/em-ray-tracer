@@ -22,9 +22,9 @@ from em_ray_tracer.fields.analytic import GlaserField, SchiskeField
 from em_ray_tracer.fields.base import AxialField, FieldKind
 from em_ray_tracer.fields.expansion import LaplaceExpansion
 from em_ray_tracer.fields.sampled import SampledAxialField
-from em_ray_tracer.rays import Rays,STATE_DIM
-from em_ray_tracer.transfer_map import TransferMap
+from em_ray_tracer.rays import STATE_DIM, Rays
 from em_ray_tracer.system import OpticalSystem
+from em_ray_tracer.transfer_map import TransferMap
 
 
 class FieldComponent(ComponentBase):
@@ -84,7 +84,7 @@ class FieldLens(FieldComponent):
         return cls(SampledAxialField(z_samples, values, kind_set,grounded_check=grounded_check), z=z, **kwargs)
 
     @classmethod
-    def from_file_with_axial_samples(cls, path: str, kind_set: FieldKind | tuple[FieldKind, ...],z: float, delimiter: str | None = None, grounded_check = True,**B_kwargs) -> Self:
+    def from_file_with_axial_samples(cls, path: str, kind_set: FieldKind | tuple[FieldKind, ...],z: float, delimiter: str | None = None, grounded_check = True, B_kwargs: dict = {},**kwargs) -> Self:
         """Build a lens from axial field samples stored in a text or CSV file.
 
         The file must have columns ``(z [m], values, ...)``, e.g. a COMSOL
@@ -106,7 +106,7 @@ class FieldLens(FieldComponent):
         grounded_check : bool, default True
             Whether to check that the field is grounded at the ends of the
             sampled range.
-        **B_kwargs
+        B_kwargs : dict
             Passed to the B-spline fit. 
             See "Other Parameters" below which adjust parameters related to the underlying B-spline interpolation.
         
@@ -127,7 +127,7 @@ class FieldLens(FieldComponent):
         Self
             The lens, whose axial derivatives follow the fitted spline.
         """
-        return cls(SampledAxialField.from_file(path, kind_set, delimiter, grounded_check = grounded_check,**B_kwargs),z=z)
+        return cls(SampledAxialField.from_file(path, kind_set, delimiter, grounded_check = grounded_check,**B_kwargs),z=z,**kwargs)
         
 
     def local_transfer_map(self, order: int = 1, voltage: float | None = None) -> TransferMap:

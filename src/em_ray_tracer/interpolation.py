@@ -4,6 +4,8 @@ they allow compatibility with pytorch. \n
 Supported interpolation methods:\n
     B-spline
 """
+from dataclasses import dataclass
+
 import torch
 
 
@@ -49,11 +51,8 @@ def b_spline_make_knots(z: torch.Tensor, p: int, n_spans: int) -> torch.Tensor:
     return torch.cat([z[:1].expand(p + 1), interior, z[-1:].expand(p + 1)])
 
 # ---------- B-spline main ----------
-@staticmethod
-def b_spline(z: torch.Tensor, field_values: torch.Tensor,
-                    order: int = 5, window_size: int = 10,
-                    lam: float = 0.0, penalty_order: int = 2,
-                    extrapolate: str = "error"):
+@dataclass
+class b_spline:
     """
     B-spline fit. Returns f(n, z0) = n-th derivative at (batched) z0.
 
@@ -62,71 +61,80 @@ def b_spline(z: torch.Tensor, field_values: torch.Tensor,
     lam          P-spline smoothing strength (0 = plain regression spline)
     extrapolate  'error' | 'clamp' | 'polynomial'
     """
-    p : int = order
+    z: torch.Tensor
+    field_values: torch.Tensor
+    order: int = 5
+    window_size: int = 10
+    lam: float = 0.0
+    penalty_order: int = 2
+    extrapolate: str = "error"
 
     # --- setup checks ---
-    if window_size < p + 1:
-        raise ValueError("window_size must be at least order + 1")
-    if torch.any(z[1:] <= z[:-1]):
-        raise ValueError("z must be strictly ascending")
-    if extrapolate not in ("error", "clamp", "polynomial"):
-        raise ValueError("extrapolate must be 'error', 'clamp' or 'polynomial'")
+    def __post_init__(self):
+    
 
-    squeeze = (field_values.ndim == 1)
-    y = field_values.unsqueeze(-1) if squeeze else field_values
+        if self.window_size < self.order + 1:
+            raise ValueError("window_size must be at least order + 1")
+        if torch.any(self.z[1:] <= self.z[:-1]):
+            raise ValueError("z must be strictly ascending")
+        if self.extrapolate not in ("error", "clamp", "polynomial"):
+            raise ValueError("extrapolate must be 'error', 'clamp' or 'polynomial'")
 
-    n_spans = max(1, len(z) // window_size)
-    t = b_spline_make_knots(z, p, n_spans) 
-    n_basis = len(t) - p - 1
-    if n_basis > len(z):
-        raise ValueError("more basis functions than samples, increase window_size")
+        self.squeeze = (self.field_values.ndim == 1)
+        y = self.field_values.unsqueeze(-1) if self.squeeze else self.field_values
 
-    # --- calculation of coefficients ---
-    B = b_spline_design_matrix(t, z, p)
-    A = B.T @ B
-    if lam > 0:
-        D = torch.diff(torch.eye(n_basis, dtype=z.dtype, device=z.device),
-                        n=penalty_order, dim=0)
-        A = A + lam * D.T @ D
-    L, info = torch.linalg.cholesky_ex(A)
-    if info.item() != 0:
-        raise ValueError(
-            "Normal equations are singular/ill-conditioned: too few samples "
-            "per knot span (Schoenberg-Whitney). Increase window_size, "
-            "set lam > 0 or use float64.")
-    coeff = torch.cholesky_solve(B.T @ y, L)          # (n_basis, C)
+        n_spans = max(1, len(self.z) // self.window_size)
+        t = b_spline_make_knots(self.z, self.order, n_spans) 
+        n_basis = len(t) - self.order - 1
+        if n_basis > len(self.z):
+            raise ValueError("more basis functions than samples, increase window_size")
 
-    lo, hi = t[0], t[-1]
+        # --- calculation of coefficients ---
+        B = b_spline_design_matrix(t, self.z, self.order)
+        A = B.T @ B
+        if self.lam > 0:
+            D = torch.diff(torch.eye(n_basis, dtype=self.z.dtype, device=self.z.device),
+                            n=self.penalty_order, dim=0)
+            A = A + self.lam * D.T @ D
+        L, info = torch.linalg.cholesky_ex(A)
+        if info.item() != 0:
+            raise ValueError(
+                "Normal equations are singular/ill-conditioned: too few samples "
+                "per knot span (Schoenberg-Whitney). Increase window_size, "
+                "set lam > 0 or use float64.")
+        coeff = torch.cholesky_solve(B.T @ y, L)          # (n_basis, C)
 
-    def f_derivative(n: int, z0) -> torch.Tensor:
-        z0 = torch.as_tensor(z0, dtype=z.dtype, device=z.device)
+        self.lo, self.hi = t[0], t[-1]
+        self.y, self.t = y, t
+        self.coeff=coeff
+
+    def __call__(self,n: int, z0) -> torch.Tensor:
+        z0 = torch.as_tensor(z0, dtype=self.z.dtype, device=self.z.device)
         scalar = (z0.ndim == 0)
         z0 = z0.reshape(-1)     #flattens
 
-        if ((z0 < lo) | (z0 > hi)).any():
-            if extrapolate == "error":
+        if ((z0 < self.lo) | (z0 > self.hi)).any():
+            if self.extrapolate == "error":
                 raise ValueError("z0 outside sample range")
-            if extrapolate == "clamp":
-                z0 = z0.clamp(lo, hi)
-            if extrapolate == "polynomial":
+            if self.extrapolate == "clamp":
+                z0 = z0.clamp(self.lo, self.hi)
+            if self.extrapolate == "polynomial":
                 raise NotImplementedError()
 
-        if n > p:
-            out = torch.zeros(len(z0), y.shape[-1], dtype=z.dtype, device=z.device)
+        if n > self.order:
+            out = torch.zeros(len(z0), self.y.shape[-1], dtype=self.z.dtype, device=self.z.device)
         else:
             # derivative of a spline, convert coefficients to lower degree
-            tn, cn, pn = t, coeff, p
+            tn, cn, pn = self.t, self.coeff, self.order
             for _ in range(n):
                 dt = (tn[pn + 1: pn + len(cn)] - tn[1: len(cn)]).unsqueeze(-1)
                 cn = pn * (cn[1:] - cn[:-1]) / dt
                 tn = tn[1:-1]
                 pn -= 1
             k, Nv = b_spline_basis_funs(tn, z0, pn)
-            idx = (k - pn).unsqueeze(1) + torch.arange(pn + 1, device=z.device)
+            idx = (k - pn).unsqueeze(1) + torch.arange(pn + 1, device=self.z.device)
             out = (Nv.unsqueeze(-1) * cn[idx]).sum(dim=1)   # (m, C)
 
-        if squeeze:
+        if self.squeeze:
             out = out[:, 0]
         return out[0] if scalar else out
-
-    return f_derivative

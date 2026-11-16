@@ -4,12 +4,9 @@ Run: uv run python examples/sem_two_condenser.py [output.png]
 """
 
 import math
-import sys
-
-import matplotlib.pyplot as plt
 
 from em_ray_tracer import Aperture, OpticalSystem, Plane, Rays, RayTracer, ThinLens
-from em_ray_tracer.visualization import plot_rays
+from em_ray_tracer.visualization import Standardplots
 
 system = OpticalSystem.from_components(
     ThinLens.from_focal_length(0.2, z=0.2, name="C1"),
@@ -28,10 +25,4 @@ print(system)
 print(f"image of the source at z = {z_image.item():.4f} m, M = {magnification.item():.4g}")
 print(f"{int(trace.final.alive.sum())} of {rays.num_rays} rays reach the detector")
 
-ax = plot_rays(trace, system)
-ax.set_ylim(-0.25, 0.25)
-ax.set_title("SEM: two condensers + objective")
-if len(sys.argv) > 1:
-    plt.savefig(sys.argv[1], dpi=150, bbox_inches="tight")
-else:
-    plt.show()
+Standardplots.single(trace,system,title="SEM: two condensers + objective")

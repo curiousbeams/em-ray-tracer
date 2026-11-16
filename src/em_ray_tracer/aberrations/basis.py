@@ -69,7 +69,8 @@ class AberrationTerm:
         col_re = d_bar + d_om.conj()
         if self.is_real:
             return [col_re]
-        return [col_re, 1j * (d_bar - d_om.conj())]
+        col_im=1j * (d_bar - d_om.conj())
+        return [col_re,col_im]
 
 
 SHIFT = AberrationTerm("shift", (0, 1, 0, 0))
