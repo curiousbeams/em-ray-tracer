@@ -99,23 +99,24 @@ class ParaxialEquations(EquationsOfMotion):
         Deliberately not under torch.no_grad(): the graph back to the field values is kept.
         Works for a 0-d z (on-the-fly) and for a whole grid (table build).
         """
-        component, kind = self.component, self.component.field.kind
-        has_e = kind in ("electrostatic", "static-electromagnetic")
-        has_m = kind in ("magnetic", "static-electromagnetic")
-
-        def kw(k):  # only the combined field needs to be told which part to return
-            return {"kind_requested": k} if kind == "static-electromagnetic" else {}
-
+        component=self.component
         zero = torch.zeros_like(z)
         b = db = dphi = d2phi = zero
         phi = self.voltage + zero
-        if has_e:
-            phi = phi + component.axial_derivative(0, z, **kw("electrostatic"))
-            dphi = component.axial_derivative(1, z, **kw("electrostatic"))
-            d2phi = component.axial_derivative(2, z, **kw("electrostatic"))
-        if has_m:
-            b = component.axial_derivative(0, z, **kw("magnetic"))
-            db = component.axial_derivative(1, z, **kw("magnetic"))
+        d0=component.axial_derivative(0,z)
+        d1=component.axial_derivative(1,z)
+        for key in d0.keys():
+            match key:
+                case "electrostatic":
+                    phi = phi + d0["electrostatic"]
+                    dphi = d1["electrostatic"]
+                    d2phi = component.axial_derivative(2, z)["electrostatic"]
+                case "magnetic":
+                    b = d0["magnetic"]
+                    db = d1["magnetic"]
+                case _:
+                    raise Warning("Unknown field present : ",key)
+            
 
         gamma, phi_hat = lorentz_factor(phi), relativistic_potential(phi)
         s = ETA / phi_hat.sqrt()
@@ -129,8 +130,6 @@ class ParaxialEquations(EquationsOfMotion):
         return self.coefficients(torch.as_tensor(z, dtype=DTYPE))  # fallback: on the fly
 
     def bind(self, component: FieldComponent, voltage: float):
-        if component.field.kind not in ("electrostatic", "magnetic", "static-electromagnetic"):
-            raise TypeError(f"No paraxial equations for a {component.field.kind!r} field")
         self.component, self.voltage, self.table = component, voltage, None
 
         def f(z: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
@@ -174,90 +173,35 @@ class NonParaxialEquations(EquationsOfMotion):
         component.axial_laplace(order)      
         self.component=component
 
+        def f(z: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
+            x, xp, y, yp = state[..., X], state[..., XP], state[..., Y], state[..., YP]
 
-        match component.field.kind:
-            case "electrostatic":
-                def f(z: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
-                    x, xp, y, yp = state[..., X], state[..., XP], state[..., Y], state[..., YP]
+            
+            w=torch.sqrt(1+xp**2+yp**2)                    
 
-                    w=torch.sqrt(1+xp**2+yp**2)
+            E,B,p=self.component.field_values(x,y,z,voltage=voltage)
 
-                    E,_,p=self.component.field_components(x,y,z,voltage=voltage)
-                    e_x=E[...,0]
-                    e_y=E[...,1]
-                    e_z=E[...,2]
+            e_x=E[...,0]
+            e_y=E[...,1]
+            e_z=E[...,2]
+            
+            b_x=B[...,0]
+            b_y=B[...,1]
+            b_z=B[...,2]
 
+            gamma=lorentz_factor(p)
+            phi_hat=relativistic_potential(p)
+            s = ETA / torch.sqrt(phi_hat)
 
-                    gamma=lorentz_factor(p)
-                    phi_hat=relativistic_potential(p)
+            
+            
+            dxpdz=w**2*(gamma/(2*phi_hat))*(e_x-xp*e_z) + s*w*(b_y*(1+xp**2)-b_z*yp-xp*yp*b_x)
+            dypdz=w**2*(gamma/(2*phi_hat))*(e_y-yp*e_z) - s*w*(b_x*(1+yp**2)-b_z*xp-xp*yp*b_y)
 
-                    
-                    dxpdz=w**2*(gamma/(2*phi_hat))*(e_x-xp*e_z)
-                    dypdz=w**2*(gamma/(2*phi_hat))*(e_y-yp*e_z)
-                    
-                    return state_derivative(
-                        xp, dxpdz, yp, dypdz
-                    )
-
-            case "magnetic":
-                p=torch.as_tensor(voltage,dtype=DTYPE)
-                phi_hat=relativistic_potential(p)
-                s = ETA / torch.sqrt(phi_hat)
-
-                def f(z: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
-                    x, xp, y, yp = state[..., X], state[..., XP], state[..., Y], state[..., YP]
-
-                    w=torch.sqrt(1+xp**2+yp**2)
-                                        
-                    _,B=self.component.field_components(x,y,z)
-
-                    b_x=B[...,0]
-                    b_y=B[...,1]
-                    b_z=B[...,2]
-
-                    dxpdz= + s*w*(b_y*(1+xp**2)-b_z*yp-xp*yp*b_x)
-                    dypdz= - s*w*(b_x*(1+yp**2)-b_z*xp-xp*yp*b_y)
-
-                    return state_derivative(
-                        xp, dxpdz, yp, dypdz
-                    )
-
-
-            case "static-electromagnetic":                
-                def f(z: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
-                    x, xp, y, yp = state[..., X], state[..., XP], state[..., Y], state[..., YP]
-
-                    
-                    w=torch.sqrt(1+xp**2+yp**2)                    
-
-                    E,B,p=self.component.field_components(x,y,z,voltage=voltage)
-
-                    e_x=E[...,0]
-                    e_y=E[...,1]
-                    e_z=E[...,2]
-                    
-                    b_x=B[...,0]
-                    b_y=B[...,1]
-                    b_z=B[...,2]
-
-                    gamma=lorentz_factor(p)
-                    phi_hat=relativistic_potential(p)
-                    s = ETA / torch.sqrt(phi_hat)
-
-                    
-                    
-                    dxpdz=w**2*(gamma/(2*phi_hat))*(e_x-xp*e_z) + s*w*(b_y*(1+xp**2)-b_z*yp-xp*yp*b_x)
-                    dypdz=w**2*(gamma/(2*phi_hat))*(e_y-yp*e_z) - s*w*(b_x*(1+yp**2)-b_z*xp-xp*yp*b_y)
-
-                    return state_derivative(
-                        xp, dxpdz, yp, dypdz
-                    )
-
-            case kind:
-                raise TypeError(f"No paraxial equations for a {kind!r} field")
+            return state_derivative(xp, dxpdz, yp, dypdz)
         self.f=f
 
-    def pre_calc(self,n_steps:float):
+    def pre_calc(self,n_steps: int):
         self.component.laplace.pre_calc(n_steps=n_steps)
     
 

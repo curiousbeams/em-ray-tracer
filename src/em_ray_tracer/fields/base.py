@@ -9,7 +9,6 @@ from torch import nn
 """It was decided to use specify the actual fields by FieldKind while
 the type of field composition is defined by the ComponentFieldKind"""
 FieldKind = Literal["magnetic", "electrostatic"]
-ComponentFieldKind = Literal["magnetic", "electrostatic","static-electromagnetic"]
 
 
 class AxialField(nn.Module, ABC):
@@ -22,14 +21,12 @@ class AxialField(nn.Module, ABC):
     Profile parameters (B0, a, ...) are ``nn.Parameter`` so they can be optimized.
     """
 
-    kind: ComponentFieldKind
-
     @abstractmethod
-    def derivative(self, n: int, z: torch.Tensor, kind_requested: FieldKind|None = None) -> torch.Tensor:
+    def derivative(self, n: int, z: torch.Tensor) -> dict:
         """The n-th z-derivative of the axial profile at ``z`` (n = 0 is the profile)."""
 
-    def forward(self, z: torch.Tensor, kind_requested: FieldKind|None = None) -> torch.Tensor:
-        return self.derivative(0, z, kind_requested=kind_requested)
+    def forward(self, z: torch.Tensor) -> dict:
+        return self.derivative(0, z)
 
     @property
     @abstractmethod
@@ -38,10 +35,10 @@ class AxialField(nn.Module, ABC):
 
 
 class Field3D(nn.Module, ABC):
-    """A full electromagnetic field, E(x, y, z) [V/m] and B(x, y, z) [T]."""
+    """A full electromagnetic field, E(x, y, z) [V/m], B(x, y, z) [T] and Phi(x,y,z) [V]."""
 
     @abstractmethod
     def evaluate(
         self, x: torch.Tensor, y: torch.Tensor, z: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Return ``(E, B)``, each shaped ``(*x.shape, 3)``."""
+    ) -> tuple[torch.Tensor, torch.Tensor,torch.Tensor|None]:
+        """Return ``(E, B, phi)``, each shaped ``(*x.shape, 3)``."""

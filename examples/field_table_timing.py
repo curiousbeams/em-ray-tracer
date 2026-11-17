@@ -46,7 +46,7 @@ schiske = FieldLens.schiske(k=0.8, a=4e-3, voltage=VOLTAGE, z=-0.02)
 z_samples = torch.linspace(-60e-3, 60e-3, 10**4, dtype=DTYPE)
 with torch.no_grad():
     samples = torch.stack(
-        [glaser.axial_derivative(0, z_samples), schiske.axial_derivative(0, z_samples)]
+        [glaser.axial_derivative(0, z_samples)["magnetic"], schiske.axial_derivative(0, z_samples)["electrostatic"]]
     )
 field = SampledAxialField(
     z_samples, samples, KINDS, grounded_check=False, extrapolate="clamp", window_size=10, order=7
@@ -68,25 +68,24 @@ class TabulatedField:
     """
 
     def __init__(self, field, n_steps: int, max_derivative: int):
-        self.kind, self.half_extent = field.kind, field.half_extent
+        self.half_extent = field.half_extent
         self.start = -float(field.half_extent)
         self.spacing = float(field.half_extent) / n_steps  # h / 2
         grid = half_step_grid(field, n_steps)
         with torch.no_grad():
             self.values = {
-                (n, kind): field.derivative(n, grid, kind_requested=kind)
+                n: field.derivative(n, grid)
                 for n in range(max_derivative + 1)
-                for kind in KINDS
             }
 
-    def derivative(self, n: int, z, kind_requested=None) -> torch.Tensor:
+    def derivative(self, n: int, z) -> dict:
         k = (z - self.start) / self.spacing
         idx=torch.round(k)
         for i,ki in enumerate(k):
             if abs(round(float(ki))-ki) > 1e-8:
                 raise ValueError(f"z = {float(z[i]):.6g} m is not on the half-step grid")
-        
-        return self.values[n, kind_requested][idx.int()]
+        deriv_dict={field:self.values[n][field][idx.int()] for field in KINDS}
+        return deriv_dict
 
 
 def per_call(fn, repeat: int) -> float:
@@ -110,8 +109,8 @@ print(f"{n_steps} RK4 steps: {4 * n_steps} right-hand-side calls at {len(grid)} 
 
 with torch.no_grad():
     point = torch.tensor(0.01, dtype=DTYPE)
-    one = per_call(lambda: field.derivative(3, point, kind_requested="magnetic"), 200)
-    whole = per_call(lambda: field.derivative(3, grid, kind_requested="magnetic"), 5)
+    one = per_call(lambda: field.derivative(3, point)["magnetic"], 200)
+    whole = per_call(lambda: field.derivative(3, grid)["magnetic"], 5)
 print(
     f"B''' at one point: {one * 1e3:.3f} ms; on all {len(grid)} points: {whole * 1e3:.3f} ms"
     f" (the cost of {whole / one:.0f} single-point calls)"

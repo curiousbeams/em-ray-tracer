@@ -59,10 +59,10 @@ class FieldComponent(ComponentBase):
         self.z_end_rel_cut=as_parameter(value)-self.z
 
 
-    def axial_derivative(self, n: int, z: torch.Tensor | float, kind_requested : FieldKind | None = None) -> torch.Tensor:
+    def axial_derivative(self, n: int, z: torch.Tensor | float) -> dict:
         """The n-th derivative of the axial profile at the absolute position ``z`` (n = 0 is
         the profile). The field's own coordinate is measured from the lens centre."""
-        return self.field.derivative(n, z - self.z, kind_requested=kind_requested)
+        return self.field.derivative(n, z - self.z)
 
     def axial_laplace(self, order: int = 3, longitudinal_order: int | None = None) -> Callable:
             """The n-th order laplace expansion of the axial profile at the absolute z position within the complete system.
@@ -72,7 +72,7 @@ class FieldComponent(ComponentBase):
 
             self.laplace=LaplaceExpansion(self.field, component=self, order = order, longitudinal_order = longitudinal_order)
 
-    def field_components(self,x,y,z,voltage = None) -> tuple[torch.Tensor,torch.Tensor]|tuple[torch.Tensor,torch.Tensor,torch.Tensor]:
+    def field_values(self,x,y,z,voltage = None) -> tuple[torch.Tensor,torch.Tensor]|tuple[torch.Tensor,torch.Tensor,torch.Tensor]:
         """returns E, B \n
         If voltage (of the electron) is also specified it returns E, B, Phi instead"""
         if not self.laplace:

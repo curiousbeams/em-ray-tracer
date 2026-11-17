@@ -48,8 +48,8 @@ def test_weak_schiske_lens_power():
     out = trace_through(lens, [[1e-3, 0, 0, 0]], volt)
     z = torch.linspace(float(lens.z_start), float(lens.z_end), 200_001, dtype=DTYPE)
     with torch.no_grad():
-        phi = volt + lens.axial_derivative(0, z)
-        dphi = lens.axial_derivative(1, z)
+        phi = volt + lens.axial_derivative(0, z)["electrostatic"]
+        dphi = lens.axial_derivative(1, z)["electrostatic"]
     gamma, phi_hat = lorentz_factor(phi), relativistic_potential(phi)
     T = 3 / 16 * (gamma * dphi / phi_hat) ** 2 - dphi**2 / (4 * REST_ENERGY_EV * phi_hat)
     expected = torch.trapezoid(T, z) + (gamma * dphi / phi_hat)[-1] / 2
@@ -63,7 +63,7 @@ def test_magnetic_rotation_follows_larmor_angle():
     voltage, B0 = 1000.0, 1e-3  # weak enough that the ray doesn't cross the axis in the span
     lens = FieldLens.glaser(B0=B0, a=A, z=0.0)
     s = ETA / math.sqrt(relativistic_potential(voltage))
-    rate = s * lens.axial_derivative(0, lens.z_start).item() / 2
+    rate = s * lens.axial_derivative(0, lens.z_start)["magnetic"] / 2
     out = trace_through(lens, [[1e-3, 0, 0, rate * 1e-3]], voltage)
     u0, u1 = float(lens.z_start) / A, float(lens.z_end) / A
     theta = s * B0 * A / 2 * (math.atan(u1) - math.atan(u0))

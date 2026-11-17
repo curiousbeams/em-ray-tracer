@@ -217,16 +217,23 @@ class Standardplots:
                             continue
                         z_local=np.linspace(c.z_start,c.z_end,1000)
 
+                        deriv=c.axial_derivative(0,z_local)
+                        phi_elem=deriv.get("electrostatic")
+                        b_elem=deriv.get("magnetic")
+
+                        if phi_elem is None: phi_elem=torch.zeros_like(z_local)
+                        if b_elem is None: b_elem=torch.zeros_like(z_local)
                         z_space.append(z_local)
-                        phi_space.append(c.axial_derivative(0,z_local,kind_requested="electrostatic"))
-                        b_space.append(c.axial_derivative(0,z_local,kind_requested="magnetic"))
+                        phi_space.append(phi_elem)
+                        b_space.append(b_elem)
             #--- flatten ---
             phi_space=np.concatenate(phi_space)
             b_space=np.concatenate(b_space)
             z_space=np.concatenate(z_space)
             #--- normalize ---
-            phi_space=phi_space/np.max(abs(phi_space))
-            b_space=b_space/np.max(abs(b_space))
+            if np.max(abs(phi_space)) != 0 : phi_space=phi_space/np.max(abs(phi_space)) 
+            if np.max(abs(b_space)) !=0 :b_space=b_space/np.max(abs(b_space)) 
+            
 
             _,axis=plt.subplots(1,N+1,sharey=True,figsize=(19.3,15),constrained_layout=True)
             axis[0].plot(phi_space,z_space,"r--",label="Phi_splined")

@@ -34,8 +34,9 @@ def test_derivatives_match_autograd(field, profile, n):
     # up to the 7th derivative, which the 3rd-order Laplace expansion needs
     expected = autograd_derivative(profile, n, Z)
     scale = expected.abs().max().item()
+    single_field=next(iter(field.derivative(n, Z).values()))
     torch.testing.assert_close(
-        field.derivative(n, Z).detach(), expected, rtol=1e-9, atol=1e-12 * scale
+        single_field.detach(), expected, rtol=1e-9, atol=1e-12 * scale
     )
 
 
@@ -52,12 +53,13 @@ def test_parameters_keep_their_documented_names():
     ids=["glaser", "schiske"],
 )
 def test_field_lenses_copy_and_save_after_use(lens):
-    before = lens.axial_derivative(3, Z).detach()
+    before = next(iter(lens.axial_derivative(3, Z).values())).detach()
     buffer = io.BytesIO()
     torch.save(lens, buffer)
     buffer.seek(0)
     for clone in (copy.deepcopy(lens), torch.load(buffer, weights_only=False)):
-        torch.testing.assert_close(clone.axial_derivative(3, Z).detach(), before)
+        single_field_clone=next(iter(clone.axial_derivative(3, Z).values()))
+        torch.testing.assert_close(single_field_clone.detach(), before)
 
 
 def test_schiske_rejects_a_reflecting_strength():

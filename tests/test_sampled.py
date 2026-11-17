@@ -19,8 +19,8 @@ lens_B=FieldLens.glaser(**GLASER,z=0)
 lens_E=FieldLens.schiske(**SCHISKE,z=0)
 z_space=torch.linspace(lens_B.z_start,lens_B.z_end,10**4)
 
-B_sampled=lens_B.axial_derivative(0,z_space)
-E_sampled=lens_E.axial_derivative(0,z_space)
+B_sampled=lens_B.axial_derivative(0,z_space)["magnetic"]
+E_sampled=lens_E.axial_derivative(0,z_space)["electrostatic"]
 
 # --- end ---
 
@@ -39,9 +39,9 @@ def test_sampled_derivatives():
     n : int =1
     z_test=torch.linspace(lens_B.z_start,lens_B.z_end,300)
     axial=FieldLens.from_axial_samples(z_samples=z_space-z0,values=[E_sampled,B_sampled],kind_set=("electrostatic","magnetic"),z=z0,grounded_check=False) 
-    B_dsample = axial.axial_derivative(n,z_test,kind_requested="magnetic")
-    E_dsample = axial.axial_derivative(n,z_test,kind_requested="electrostatic")
+    B_dsample = axial.axial_derivative(n,z_test)["magnetic"]
+    E_dsample = axial.axial_derivative(n,z_test)["electrostatic"]
 
-    torch.testing.assert_close(B_dsample,lens_B.axial_derivative(n,z_test))
-    torch.testing.assert_close(E_dsample,lens_E.axial_derivative(n,z_test))
+    torch.testing.assert_close(B_dsample,lens_B.axial_derivative(n,z_test)["magnetic"])
+    torch.testing.assert_close(E_dsample,lens_E.axial_derivative(n,z_test)["electrostatic"])
 

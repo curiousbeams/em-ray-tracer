@@ -70,7 +70,6 @@ class GlaserField(AxialField):
         Integration half-span in units of ``a``; the field is 1% of its peak at 10a.
     """
 
-    kind = "magnetic"
 
     def __init__(self, B0: float, a: float, extent: float = 10.0):
         super().__init__()
@@ -82,11 +81,9 @@ class GlaserField(AxialField):
     def half_extent(self) -> float:
         return float(self.extent * self.a)
 
-    def derivative(self, n: int, z: torch.Tensor, kind_requested: FieldKind|None = None) -> torch.Tensor:
+    def derivative(self, n: int, z: torch.Tensor) -> dict:
         """The n-th derivative of B(z): B0 a^2 f^(n)(z)."""
-        if kind_requested and kind_requested != self.kind:
-            raise ValueError(f"Glaser field only contains a magnetic field, not a field of type {kind_requested}")
-        return self.B0 * self.a**2 * pole_derivative(n, z, self.a)
+        return {"magnetic" : self.B0 * self.a**2 * pole_derivative(n, z, self.a)}
 
 
 class SchiskeField(AxialField):
@@ -107,7 +104,6 @@ class SchiskeField(AxialField):
         Integration half-span in units of ``a``.
     """
 
-    kind = "electrostatic"
 
     def __init__(self, k: float, a: float, voltage: float, extent: float = 10.0):
         super().__init__()
@@ -125,9 +121,7 @@ class SchiskeField(AxialField):
     def half_extent(self) -> float:
         return float(self.extent * self.a)
 
-    def derivative(self, n: int, z: torch.Tensor, kind_requested: FieldKind|None = None) -> torch.Tensor:
+    def derivative(self, n: int, z: torch.Tensor) -> dict:
         """The n-th derivative of phi(z) / phi0: (n == 0) - k^2 a^2 f^(n)(z)."""
-        if kind_requested and kind_requested != self.kind:
-            raise ValueError(f"Schiske field only contains an electrostatic field, not a field of type {kind_requested}")
         dip = -(self.k**2) * self.a**2 * pole_derivative(n, z, self.a)
-        return self.voltage*dip
+        return {"electrostatic" : self.voltage*dip}

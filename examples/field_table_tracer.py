@@ -60,10 +60,10 @@ def coefficients(z: torch.Tensor, magnetic=MAGNETIC, electrostatic=ELECTROSTATIC
     phi = VOLTAGE + zero
     with torch.no_grad():
         if magnetic is not None:
-            b, db = magnetic.derivative(0, z), magnetic.derivative(1, z)
+            b, db = magnetic.derivative(0, z)["magnetic"], magnetic.derivative(1, z)["magnetic"]
         if electrostatic is not None:
-            phi = phi + electrostatic.derivative(0, z)
-            dphi, d2phi = electrostatic.derivative(1, z), electrostatic.derivative(2, z)
+            phi = phi + electrostatic.derivative(0, z)["electrostatic"]
+            dphi, d2phi = electrostatic.derivative(1, z)["electrostatic"], electrostatic.derivative(2, z)["electrostatic"]
     phi_hat, gamma = relativistic_potential(phi), lorentz_factor(phi)
     s = ETA / phi_hat.sqrt()
     damping, lens = gamma * dphi / (2 * phi_hat), gamma * d2phi / (4 * phi_hat)

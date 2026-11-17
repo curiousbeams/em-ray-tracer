@@ -55,29 +55,16 @@ class SampledAxialField(AxialField):
                              "if you are aware of the error then this check can be ignored by passing grounded_check = False")
 
 
-        # --- determine ComponentFieldKind ---
-        match sorted(kind_set):
-            case ("magnetic",) | ("electrostatic",):
-                componentkind=kind_set[0]
-            case ("electrostatic","magnetic"):
-                componentkind="static-electromagnetic"           
-            case _:
-                raise ValueError(f"unrecognized fields or combination of fields: {kind_set}")
-
         
         # --- setup dictionaries for easy indexing and field derivatives ---
         self._row={kind:index for index, kind in enumerate(kind_set)}
-        
         self.smoothed={}
-        for field_key in kind_set:
-            self.smoothed[field_key]=None
 
 
 
         self.register_buffer("z_samples", z_samples)
         self.register_buffer("values", values)
         self.kind_set=kind_set
-        self.kind=componentkind
 
                 
 
@@ -103,20 +90,12 @@ class SampledAxialField(AxialField):
     
 
 
-    def derivative(self, n: int, z: torch.Tensor, kind_requested: FieldKind|None = None) -> torch.Tensor:
-        if kind_requested is None :
-            if len(self.kind_set)!=1:
-                raise ValueError(f"kind_requested is required when multiple fields are defined: {self.kind_set}")
-            kind_requested=self.kind_set[0]
+    def derivative(self, n: int, z: torch.Tensor) -> dict:
+        if not self.smoothed:
+            kinds=self._row.values()
+            self.smoothed={self.kind_set[k]:b_spline(self.z_samples,self.values[k],**self.B_kwargs) for k in kinds}
         
-        if kind_requested not in self._row.keys():
-            raise TypeError(f"Requested kind not in set of fields defined, requested kind: {kind_requested}, set of fields: {self.kind_set}")
-        
-        if not self.smoothed[kind_requested]:
-            kind_index=self._row[kind_requested]
-            self.smoothed[kind_requested]=b_spline(self.z_samples,self.values[kind_index],**self.B_kwargs)
-        
-        return self.smoothed[kind_requested](n,z)
+        return {key: val(n,z) for key,val in self.smoothed.items()}
 
 
 class FieldMap3D(Field3D):

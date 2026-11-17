@@ -49,8 +49,8 @@ def test_glaser_derivatives_match_finite_differences():
     field = GlaserField(**GLASER)
     z = torch.linspace(-0.05, 0.05, 101, dtype=torch.float64)
     h = 1e-6
-    fd = (field.derivative(0, z + h) - field.derivative(0, z - h)) / (2 * h)
-    torch.testing.assert_close(field.derivative(1, z), fd, rtol=1e-6, atol=1e-9)
+    fd = (field.derivative(0, z + h)["magnetic"] - field.derivative(0, z - h)["magnetic"]) / (2 * h)
+    torch.testing.assert_close(field.derivative(1, z)["magnetic"], fd, rtol=1e-6, atol=1e-9)
 
 
 def test_paraxial_glaser_matches_closed_form():
@@ -104,13 +104,13 @@ def test_laplace_expansion_divergence_identity():
     x = torch.tensor([1e-3], dtype=torch.float64, requires_grad=True)
     y = torch.tensor([5e-4], dtype=torch.float64, requires_grad=True)
     z = torch.tensor([2e-3], dtype=torch.float64, requires_grad=True)
-    _, B = expansion.evaluate(x, y, z)
+    _, B ,_= expansion.evaluate(x, y, z)
     div = sum(
         torch.autograd.grad(B[..., i].sum(), v, create_graph=True)[0]
         for i, v in enumerate((x, y, z))
     )
     r2 = x**2 + y**2
-    expected = -1 / (2**6 * 36) * r2**3 * field.derivative(7, z)
+    expected = -1 / (2**6 * 36) * r2**3 * field.derivative(7, z)["magnetic"]
     torch.testing.assert_close(div, expected, rtol=1e-6, atol=0)
 
 @stub
