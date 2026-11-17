@@ -166,6 +166,10 @@ def quadrupole_map(power, orientation=0.0) -> TransferMap:
     return quad
 
 
+def multipole_map(power, order: int, orientation=0.0) -> TransferMap:
+    raise NotImplementedError()
+
+
 def deflection_map(deflection_x, deflection_y, dispersion=0.0) -> TransferMap:
     """Constant slope kick (alpha_x, alpha_y), in the homogeneous column.
 

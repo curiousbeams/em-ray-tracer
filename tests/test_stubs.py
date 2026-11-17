@@ -20,6 +20,7 @@ from em_ray_tracer.rays import Rays
 from em_ray_tracer.solvers.ode import ODESolver
 from em_ray_tracer.solvers.transfer_matrix import TransferMatrixSolver
 from em_ray_tracer.system import OpticalSystem
+from em_ray_tracer.transfer_map import quadrupole_map, multipole_map
 
 stub = pytest.mark.xfail(raises=NotImplementedError, strict=True, reason="stub")
 
@@ -111,3 +112,13 @@ def test_laplace_expansion_divergence_identity():
     r2 = x**2 + y**2
     expected = -1 / (2**6 * 36) * r2**3 * field.derivative(7, z)
     torch.testing.assert_close(div, expected, rtol=1e-6, atol=0)
+
+@stub
+def test_quadrupole_matches_multipole_4():
+    p=1
+    ori=0
+    state=torch.as_tensor([3,1,2,1,0],dtype=DTYPE)
+
+    quad=quadrupole_map(p,orientation=ori)
+    multi=multipole_map(p,order=2,orientation=ori)
+    torch.testing.assert_close(quad.apply(state=state),multi.apply(state=state))
