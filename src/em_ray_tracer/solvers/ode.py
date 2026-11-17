@@ -9,6 +9,7 @@ thin elements traces identically under either solver.
 import math
 from abc import ABC, abstractmethod
 from typing import Self
+from time import perf_counter
 
 import torch
 
@@ -36,7 +37,10 @@ class EquationsOfMotion(ABC):
     """
 
     @abstractmethod
-    def bind(self, component: FieldComponent, voltage: float) -> RHS: ...
+    def bind(self, component: FieldComponent, voltage: float) : ...
+
+    def __call__(self,z: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
+        return self.f(z, state)
 
 
 class ParaxialEquations(EquationsOfMotion):
@@ -58,8 +62,11 @@ class ParaxialEquations(EquationsOfMotion):
     equation above. Checked against the Glaser closed form (tests/test_stubs.py) and, for
     electrostatic lenses and the sense of the rotation, in tests/test_paraxial.py.
     """
+    def __init__(self):
+        self.f: RHS | None=None
 
-    def bind(self, component: FieldComponent, voltage: float) -> RHS:
+
+    def bind(self, component: FieldComponent, voltage: float):
         match component.field.kind:
             case "electrostatic":
 
@@ -113,7 +120,10 @@ class ParaxialEquations(EquationsOfMotion):
 
             case kind:
                 raise TypeError(f"No paraxial equations for a {kind!r} field")
-        return f
+        self.f=f
+    
+    def pre_calc(self,n_steps:float):
+        return None
 
 
 class NonParaxialEquations(EquationsOfMotion):
@@ -130,11 +140,12 @@ class NonParaxialEquations(EquationsOfMotion):
         if not isinstance(expansion_order,int) or (expansion_order <= 0):
             raise ValueError(f"The expansion order must be an integer and greater then 0, it is now {expansion_order,type(expansion_order)}")
         self.expansion_order = expansion_order
-        
+        self.f: RHS | None = None
 
-    def bind(self, component: FieldComponent, voltage: float) -> RHS:
+    def bind(self, component: FieldComponent, voltage: float):
         order=self.expansion_order
-        laplace=component.axial_laplace(order)      
+        component.axial_laplace(order)      
+        self.component=component
 
 
         match component.field.kind:
@@ -144,7 +155,7 @@ class NonParaxialEquations(EquationsOfMotion):
 
                     w=torch.sqrt(1+xp**2+yp**2)
 
-                    E,_,p=laplace(x,y,z,voltage=voltage)
+                    E,_,p=self.component.field_components(x,y,z,voltage=voltage)
                     e_x=E[...,0]
                     e_y=E[...,1]
                     e_z=E[...,2]
@@ -171,7 +182,7 @@ class NonParaxialEquations(EquationsOfMotion):
 
                     w=torch.sqrt(1+xp**2+yp**2)
                                         
-                    _,B=laplace(x,y,z)
+                    _,B=self.component.field_components(x,y,z)
 
                     b_x=B[...,0]
                     b_y=B[...,1]
@@ -192,7 +203,7 @@ class NonParaxialEquations(EquationsOfMotion):
                     
                     w=torch.sqrt(1+xp**2+yp**2)                    
 
-                    E,B,p=laplace(x,y,z,voltage=voltage)
+                    E,B,p=self.component.field_components(x,y,z,voltage=voltage)
 
                     e_x=E[...,0]
                     e_y=E[...,1]
@@ -215,10 +226,13 @@ class NonParaxialEquations(EquationsOfMotion):
                         xp, dxpdz, yp, dypdz
                     )
 
-
             case kind:
                 raise TypeError(f"No paraxial equations for a {kind!r} field")
-        return f
+        self.f=f
+
+    def pre_calc(self,n_steps:float):
+        self.component.laplace.pre_calc(n_steps=n_steps)
+    
 
 
         
@@ -252,13 +266,18 @@ class ODESolver(SolverBase):
     def integrate(self, component: FieldComponent, rays: Rays, snapshots : list[Rays]|None=None) -> tuple[Rays, None, list[Rays] | None]:
         if rays.voltage is None:
             raise ValueError("Field components need the beam energy: set Rays(voltage=...)")
-        f = self.equations.bind(component, rays.voltage)
+        self.equations.bind(component, rays.voltage)
+        f=self.equations
         z0, z1 = component.z_start, component.z_end
         match self.integrator:
             case IntegratorParams.RK4(dz=dz):
                 n = max(1, math.ceil(float((z1 - z0).detach()) / dz))
                 h = (z1 - z0) / n
                 state = rays.state
+                t0=perf_counter()
+                f.pre_calc(n_steps=n)
+                t1=perf_counter()
+                print("time to setup pre-calculated table:",t1-t0)
                 for i in range(n):
                     state = rk4_step(f, z0 + i * h, state, h)
                     if snapshots is not None : 

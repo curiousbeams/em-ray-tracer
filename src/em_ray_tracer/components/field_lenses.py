@@ -36,6 +36,7 @@ class FieldComponent(ComponentBase):
         self.field = field
         self.z_start_rel_cut=None
         self.z_end_rel_cut=None
+        self.laplace=None
 
     @property
     def z_start(self) -> torch.Tensor:
@@ -69,14 +70,16 @@ class FieldComponent(ComponentBase):
             Returns a function which takes (x,y,z) and returns the E, B fields\n
             If the optional voltage is specified it returns E, B, phi_absolute instead"""
 
-            laplace=LaplaceExpansion(self.field, order = order, longitudinal_order = longitudinal_order)
-            def laplace_offset(x,y,z,voltage = None) -> tuple[torch.Tensor,torch.Tensor]|tuple[torch.Tensor,torch.Tensor,torch.Tensor]:
-                """returns E, B \n
-                If voltage (of the electron) is also specified it returns E, B, Phi instead"""
-                z_field=z-self.z
-                return laplace.evaluate(x,y,z_field,voltage=voltage)
+            self.laplace=LaplaceExpansion(self.field, component=self, order = order, longitudinal_order = longitudinal_order)
 
-            return laplace_offset
+    def field_components(self,x,y,z,voltage = None) -> tuple[torch.Tensor,torch.Tensor]|tuple[torch.Tensor,torch.Tensor,torch.Tensor]:
+        """returns E, B \n
+        If voltage (of the electron) is also specified it returns E, B, Phi instead"""
+        if not self.laplace:
+            raise RuntimeError("call axial_laplace first before using the call function")
+        z_field=z-self.z
+        return self.laplace.evaluate(x,y,z_field,voltage=voltage)
+        
     def config(self):
         raise NotImplementedError("config() for field components is not implemented yet")
 

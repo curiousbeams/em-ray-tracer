@@ -80,10 +80,13 @@ class TabulatedField:
             }
 
     def derivative(self, n: int, z, kind_requested=None) -> torch.Tensor:
-        k = (float(z) - self.start) / self.spacing
-        if abs(k - round(k)) > 1e-6:
-            raise ValueError(f"z = {float(z):.6g} m is not on the half-step grid")
-        return self.values[n, kind_requested][round(k)]
+        k = (z - self.start) / self.spacing
+        idx=torch.round(k)
+        for i,ki in enumerate(k):
+            if abs(round(float(ki))-ki) > 1e-8:
+                raise ValueError(f"z = {float(z[i]):.6g} m is not on the half-step grid")
+        
+        return self.values[n, kind_requested][idx.int()]
 
 
 def per_call(fn, repeat: int) -> float:

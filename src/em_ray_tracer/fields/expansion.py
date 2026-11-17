@@ -15,11 +15,17 @@ longitudinal sum one order below the transverse one gives the strictly linearize
 implementation: ``laplaceExpansion`` in the em-widgets kit (kit/nonparaxial.js).
 """
 
+from __future__ import annotations
+from itertools import product
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
 import torch
 
 from em_ray_tracer.fields.base import AxialField, Field3D
+from em_ray_tracer.constants import DTYPE
+if TYPE_CHECKING:
+    from em_ray_tracer.components.field_lenses import FieldComponent
 
 
 class LaplaceExpansion(Field3D):
@@ -54,20 +60,36 @@ class LaplaceExpansion(Field3D):
 
 
     # ---- inside your class ----
-    def __init__(self, axial: AxialField, order: int = 3, longitudinal_order: int | None = None):
+    def __init__(self, axial: AxialField, 
+                 order: int = 3, 
+                 longitudinal_order: int | None = None, 
+                 component: FieldComponent|None = None):
         super().__init__()
         self.axial: AxialField = axial
         self.order = order
         self.longitudinal_order = order if longitudinal_order is None else longitudinal_order
+        self.component=component
+        self.cache={}
+        self.z_grid=None
+        self._precalc=False
 
     # every (n, kind) axial derivative is evaluated at most once per z
     def _memo(self, z):
         cache = {}
+        if self._precalc:
+            cache_grid: dict = self.cache_grid
+            index=self.estimate_index(z)
+            if index is None:
+                pass
+            else:
+                cache={k:cache_grid[k][index] for k in cache_grid.keys()}
+
         derivative = self.axial.derivative
         def d(n, kind):
-            key = (n, kind)
+            key = (n,kind)
             v = cache.get(key)
             if v is None:
+                if self._precalc: print("missing derivative",n,z)
                 v = cache[key] = derivative(n, z, kind_requested=kind)
             return v
         return d
@@ -110,6 +132,8 @@ class LaplaceExpansion(Field3D):
     def evaluate(
         self, x: torch.Tensor, y: torch.Tensor, z: torch.Tensor, voltage: float|None = None
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        
+        
         kind = self.axial.kind
         d = self._memo(z)
         u = torch.addcmul(x * x, y, y)
@@ -133,3 +157,35 @@ class LaplaceExpansion(Field3D):
         if voltage is not None:
             return (E, B, self._phi_series(u, d, voltage))
         return (E, B)
+    
+    def pre_calc(self,n_steps:int):
+        if self.component is None:
+            raise ValueError("please supply component in order to use precalc")
+        z0=float(self.component.z_start-self.component.z)
+        z1=float(self.component.z_end-self.component.z)
+        z_step=(z1-z0)/(2*n_steps)
+        
+        z_space=torch.linspace(z0,z1,2*n_steps+1,dtype=DTYPE)
+        n_space=range(0,self.order+2)
+        match self.axial.kind:
+            case "magnetic": kind_space=["magnetic",]
+            case "electrostatic": kind_space=["electrostatic",]
+            case "static-electromagnetic": kind_space=["electrostatic","magnetic"]
+
+
+        cache_grid={(n,k): self.axial.derivative(n,z_space,kind_requested=k) for n in n_space for k in kind_space}
+
+        self.z0=z0
+        self.z_step=z_step
+        self.z_grid=z_space
+        self.cache_grid=cache_grid
+        self._precalc=True
+    
+    def estimate_index(self,z):
+        raw=float((z-self.z0)/self.z_step)
+        index=round(raw)
+        abs_error=raw-index
+        if abs(abs_error)>1e-8 or not (0 <= index <= len(self.z_grid)) :  
+            print(abs_error,":abs error is larger then 1e-8 for z:",z.item())
+            return None
+        return index
