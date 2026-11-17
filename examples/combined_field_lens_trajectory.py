@@ -54,6 +54,6 @@ rays=Rays.from_parallel(radius=2e-3,num_rays=32,voltage=volt)
 #rays=Rays.from_disk(semiangle=0.01,num_rays=32,voltage=volt)
 
 
-Standardplots.multi_order(system=system,rays=rays,highest_order=5,step_size=1e-4,
+Standardplots.multi_order(system=system,rays=rays,highest_order=5,step_size=1e-5,
                           show_fields=True,
                           fname="examples/Combined_lens_multi-order.png")

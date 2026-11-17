@@ -15,8 +15,8 @@ import torch
 
 from em_ray_tracer.components.base import ComponentBase
 from em_ray_tracer.components.field_lenses import FieldComponent
-from em_ray_tracer.constants import ETA, lorentz_factor, relativistic_potential
-from em_ray_tracer.rays import DTYPE, XP, YP, Rays, X, Y
+from em_ray_tracer.constants import ETA, lorentz_factor, relativistic_potential, DTYPE
+from em_ray_tracer.rays import XP, YP, Rays, X, Y
 from em_ray_tracer.solvers.base import SolverBase
 from em_ray_tracer.solvers.integrators import RHS, rk4_step
 from em_ray_tracer.solvers.params import IntegratorParams, IntegratorParamsType
@@ -26,6 +26,31 @@ from em_ray_tracer.transfer_map import TransferMap
 def state_derivative(xp, xpp, yp, ypp) -> torch.Tensor:
     """d/dz [x, x', y, y', delta] from its components; delta is constant."""
     return torch.stack([xp, xpp, yp, ypp, torch.zeros_like(xp)], dim=-1)
+
+class _HalfStepTable:
+    """(S, S', D, L) on the RK4 half-step grid z_start + k h/2, k = 0 .. 2n."""
+    def __init__(self, z_start: float, step: float, n_steps: int, values: torch.Tensor):
+        self.z_start, self.step, self.n_steps = z_start, step, n_steps
+        self.values = values  # (2n + 1, 4), used for batched lookups
+        self.rows = values.unbind(0)
+
+    def index(self, z) -> torch.Tensor:
+        """Half-step grid index of z (long tensor, same shape as z; 0-d for a scalar)."""
+        z = torch.as_tensor(z, dtype=DTYPE).detach()
+        k = (z - self.z_start) / (self.step / 2)
+        k_round = torch.round(k)
+        bad = ((k - k_round).abs() > 1e-6) | (k_round < 0) | (k_round > 2 * self.n_steps)
+        if bad.any():
+            z_bad = z[bad].flatten()[0]  # first offending value, for the message
+            raise ValueError(f"z = {float(z_bad):.6g} m is not on the half-step grid")
+        return k_round.long()
+
+    def at(self, z) -> torch.Tensor:
+        """Rows (S, S', D, L) at z: shape (4,) for scalar z, (*z.shape, 4) for batched z."""
+        idx = self.index(z)
+        if idx.ndim == 0:
+            return self.rows[int(idx)]
+        return self.values[idx]  # advanced indexing; differentiable
 
 
 class EquationsOfMotion(ABC):
@@ -63,67 +88,69 @@ class ParaxialEquations(EquationsOfMotion):
     electrostatic lenses and the sense of the rotation, in tests/test_paraxial.py.
     """
     def __init__(self):
-        self.f: RHS | None=None
+        self.f: RHS | None = None
+        self.component: FieldComponent | None = None
+        self.voltage = None
+        self.table: _HalfStepTable | None = None
 
+    def coefficients(self, z: torch.Tensor) -> torch.Tensor:
+        """(S, S', D, L) at z, stacked on a last axis of 4. S and S' include the field amplitude.
+
+        Deliberately not under torch.no_grad(): the graph back to the field values is kept.
+        Works for a 0-d z (on-the-fly) and for a whole grid (table build).
+        """
+        component, kind = self.component, self.component.field.kind
+        has_e = kind in ("electrostatic", "static-electromagnetic")
+        has_m = kind in ("magnetic", "static-electromagnetic")
+
+        def kw(k):  # only the combined field needs to be told which part to return
+            return {"kind_requested": k} if kind == "static-electromagnetic" else {}
+
+        zero = torch.zeros_like(z)
+        b = db = dphi = d2phi = zero
+        phi = self.voltage + zero
+        if has_e:
+            phi = phi + component.axial_derivative(0, z, **kw("electrostatic"))
+            dphi = component.axial_derivative(1, z, **kw("electrostatic"))
+            d2phi = component.axial_derivative(2, z, **kw("electrostatic"))
+        if has_m:
+            b = component.axial_derivative(0, z, **kw("magnetic"))
+            db = component.axial_derivative(1, z, **kw("magnetic"))
+
+        gamma, phi_hat = lorentz_factor(phi), relativistic_potential(phi)
+        s = ETA / phi_hat.sqrt()
+        return torch.stack(
+            [s * b, s * db, gamma * dphi / (2 * phi_hat), gamma * d2phi / (4 * phi_hat)], dim=-1
+        )
+
+    def _row(self, z) -> torch.Tensor:
+        if self.table is not None:
+            return self.table.at(z)
+        return self.coefficients(torch.as_tensor(z, dtype=DTYPE))  # fallback: on the fly
 
     def bind(self, component: FieldComponent, voltage: float):
-        match component.field.kind:
-            case "electrostatic":
+        if component.field.kind not in ("electrostatic", "magnetic", "static-electromagnetic"):
+            raise TypeError(f"No paraxial equations for a {component.field.kind!r} field")
+        self.component, self.voltage, self.table = component, voltage, None
 
-                def f(z: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
-                    # the field's profile is per volt of the beam's accelerating voltage
-                    phi = voltage + component.axial_derivative(0, z)
-                    dphi = component.axial_derivative(1, z)
-                    d2phi = component.axial_derivative(2, z)
-                    gamma, phi_hat = lorentz_factor(phi), relativistic_potential(phi)
-                    damping = gamma * dphi / (2 * phi_hat)
-                    focusing = gamma * d2phi / (4 * phi_hat)
-                    x, xp, y, yp = state[..., X], state[..., XP], state[..., Y], state[..., YP]
-                    return state_derivative(
-                        xp, -damping * xp - focusing * x, yp, -damping * yp - focusing * y
-                    )
+        def f(z: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
+            S, dS, D, L = self._row(z).unbind(-1)
+            x, xp, y, yp = state[..., X], state[..., XP], state[..., Y], state[..., YP]
+            return state_derivative(
+                xp, -D * xp - L * x - (S * yp + dS * y / 2),
+                yp, -D * yp - L * y + (S * xp + dS * x / 2),
+            )
 
-            case "magnetic":
-                s = ETA / math.sqrt(relativistic_potential(voltage))
-
-                def f(z: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
-                    B = component.axial_derivative(0, z)
-                    dB = component.axial_derivative(1, z)
-                    x, xp, y, yp = state[..., X], state[..., XP], state[..., Y], state[..., YP]
-                    return state_derivative(
-                        xp, -s * (B * yp + dB * y / 2), yp, s * (B * xp + dB * x / 2)
-                    )
-
-            case "static-electromagnetic":
-                def f(z: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
-                    # the field's profile is per volt of the beam's accelerating voltage
-                    phi = voltage + component.axial_derivative(0, z, kind_requested="electrostatic")
-                    dphi = component.axial_derivative(1, z, kind_requested="electrostatic")
-                    d2phi = component.axial_derivative(2, z, kind_requested="electrostatic")
-                    gamma, phi_hat = lorentz_factor(phi), relativistic_potential(phi)
-                    
-                    B = component.axial_derivative(0, z, kind_requested="magnetic")
-                    dB = component.axial_derivative(1, z, kind_requested="magnetic")
-
-                    s = ETA / math.sqrt(phi_hat)
-                    damping = gamma * dphi / (2 * phi_hat)
-                    focusing = gamma * d2phi / (4 * phi_hat)
-                    x, xp, y, yp = state[..., X], state[..., XP], state[..., Y], state[..., YP]
-
-                    dxpdz=-damping * xp - focusing * x - s * (B * yp + dB * y / 2)
-                    dypdz=-damping * yp - focusing * y + s * (B * xp + dB * x / 2)
-                    
-                    return state_derivative(
-                        xp, dxpdz, yp, dypdz
-                    )
-
-
-            case kind:
-                raise TypeError(f"No paraxial equations for a {kind!r} field")
-        self.f=f
+        self.f = f
     
-    def pre_calc(self,n_steps:float):
-        return None
+        
+    def pre_calc(self, n_steps: int) -> None:
+        """Tabulate the coefficients on z_start + k*step/2, k = 0 .. 2*n_steps, for fixed-step RK4."""
+        z_start=self.component.z_start
+        z_end=self.component.z_end
+        step=(z_end-z_start)/n_steps
+        grid = z_start + (step / 2) * torch.arange(2 * n_steps + 1, dtype=DTYPE)
+        self.table = _HalfStepTable(z_start, step, n_steps, self.coefficients(grid))
 
 
 class NonParaxialEquations(EquationsOfMotion):
