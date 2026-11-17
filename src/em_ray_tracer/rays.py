@@ -194,13 +194,19 @@ class Rays:
         return cls(state=state, z=z, voltage=voltage)
 
     @classmethod
-    def principal(cls, z: float = 0.0, voltage: float | None = None) -> Self:
+    def principal(cls, z: float = 0.0, voltage: float | None = None,r_interest: float|None=None) -> Self:
         """The four unit rays g_x, h_x, g_y, h_y (unit position or unit slope in x and y).
 
         Traced through a linear system, their final states are the columns of its matrix.
         """
+        if r_interest is not None:
+            scale=r_interest
+        else:
+            scale=1
+
         state = torch.zeros(4, STATE_DIM, dtype=DTYPE)
-        state[:, :4] = torch.eye(4, dtype=DTYPE)
+        state[:, :4] = scale*torch.eye(4, dtype=DTYPE)
+        
         return cls(state=state, z=z, voltage=voltage)
 
     # endregion --- entry points ---

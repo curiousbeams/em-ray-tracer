@@ -157,15 +157,14 @@ class FieldLens(FieldComponent):
         asses around a relevant order of magnitude and prevent blow up."""
         from em_ray_tracer.solvers.ode import ODESolver
         
-        r=self.r_interest
-        principal=Rays.principal(z=float(self.z_start),voltage=voltage)
-        if r is not None:
-            scale=r
-            principal=principal.replace(state=scale*principal.state)
+        
+        principal=Rays.principal(z=float(self.z_start),voltage=voltage,r_interest=self.r_interest)
+        system=OpticalSystem.from_components(self)
+        if self.r_interest is not None:
+            scale=self.r_interest
         else:
             scale=1
 
-        system=OpticalSystem.from_components(self)
         
         if order==1:
             out_rays=ODESolver.paraxial().trace(system, principal).final.state
