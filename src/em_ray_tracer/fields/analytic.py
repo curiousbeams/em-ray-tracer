@@ -36,8 +36,8 @@ import math
 
 import torch
 
-from em_ray_tracer.fields.base import AxialField, FieldKind
-from em_ray_tracer.utils import as_parameter
+from em_ray_tracer.fields.base import AxialField
+from em_ray_tracer.utilities.utils import as_parameter
 
 
 def pole_derivative(n: int, z: torch.Tensor, a: torch.Tensor) -> torch.Tensor:

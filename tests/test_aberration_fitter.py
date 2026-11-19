@@ -17,6 +17,8 @@ from em_ray_tracer import (
     RayTracer,
     ThinLens,
 )
+from em_ray_tracer.components.field_lenses import FieldLens
+from em_ray_tracer.solvers.base import SolverBase, SolverParams
 
 CONE = dict(semiangle=1e-2, n_azimuthal=16, n_shells=4)
 
@@ -157,3 +159,24 @@ def test_full_basis_has_no_conjugate_duplicates():
     for a, b, c, d in keys:
         if (b, a, d, c) != (a, b, c, d):
             assert (b, a, d, c) not in keys
+
+def test_aberation_glaser_third():
+    GLASER={"B0":1, "a":1e-3,"z":10e-3}
+    glaser=FieldLens.glaser(**GLASER)
+    system=OpticalSystem.from_components(glaser)
+
+    solver_3th=SolverBase.from_params(params=SolverParams.NonParaxial(expansion_order=3))
+    solver_5th=SolverBase.from_params(params=SolverParams.NonParaxial(expansion_order=5))
+    solver_7th=SolverBase.from_params(params=SolverParams.NonParaxial(expansion_order=7))
+    rays=Rays.from_cone(**CONE,voltage=1e4)
+    
+    coeff_3th=RayTracer.from_models(system=system,rays=rays,solver=solver_3th).fit_aberrations(basis=AberrationBasis.axial(order=7))
+    coeff_5th=RayTracer.from_models(system=system,rays=rays,solver=solver_5th).fit_aberrations(basis=AberrationBasis.axial(order=7))
+    coeff_7th=RayTracer.from_models(system=system,rays=rays,solver=solver_7th).fit_aberrations(basis=AberrationBasis.axial(order=7))
+    
+    torch.testing.assert_close(coeff_5th["C30"],coeff_3th["C30"])
+    torch.testing.assert_close(coeff_7th["C30"],coeff_3th["C30"])
+    # 5th leaks alpha^2 and 7 leakes alpha^4 from 3th order if not allowed in fitting basis
+
+    
+    

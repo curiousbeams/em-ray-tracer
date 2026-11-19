@@ -18,7 +18,7 @@ from em_ray_tracer.transfer_map import (
     quadrupole_map,
     thin_lens_map,
 )
-from em_ray_tracer.utils import as_parameter
+from em_ray_tracer.utilities.utils import as_parameter
 
 
 class ThinLens(ComponentBase):

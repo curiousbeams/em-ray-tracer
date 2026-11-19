@@ -24,6 +24,7 @@ viz = [
 test = [
     "pytest>=8.3.5",
     "pytest-cov>=7.0.0",
+    "scipy>=1.4",
 ]
 dev = [
     { include-group = "test" },

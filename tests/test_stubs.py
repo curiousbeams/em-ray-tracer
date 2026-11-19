@@ -20,7 +20,7 @@ from em_ray_tracer.rays import Rays
 from em_ray_tracer.solvers.ode import ODESolver
 from em_ray_tracer.solvers.transfer_matrix import TransferMatrixSolver
 from em_ray_tracer.system import OpticalSystem
-from em_ray_tracer.transfer_map import quadrupole_map, multipole_map
+from em_ray_tracer.transfer_map import multipole_map, quadrupole_map
 
 stub = pytest.mark.xfail(raises=NotImplementedError, strict=True, reason="stub")
 

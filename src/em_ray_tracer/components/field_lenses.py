@@ -25,7 +25,7 @@ from em_ray_tracer.fields.sampled import SampledAxialField
 from em_ray_tracer.rays import STATE_DIM, Rays
 from em_ray_tracer.system import OpticalSystem
 from em_ray_tracer.transfer_map import TransferMap
-from em_ray_tracer.utils import as_parameter
+from em_ray_tracer.utilities.utils import as_parameter
 
 
 class FieldComponent(ComponentBase):

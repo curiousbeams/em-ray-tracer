@@ -8,14 +8,14 @@ thin elements traces identically under either solver.
 
 import math
 from abc import ABC, abstractmethod
-from typing import Self
 from time import perf_counter
+from typing import Self
 
 import torch
 
 from em_ray_tracer.components.base import ComponentBase
 from em_ray_tracer.components.field_lenses import FieldComponent
-from em_ray_tracer.constants import ETA, lorentz_factor, relativistic_potential, DTYPE
+from em_ray_tracer.constants import DTYPE, ETA, lorentz_factor, relativistic_potential
 from em_ray_tracer.rays import XP, YP, Rays, X, Y
 from em_ray_tracer.solvers.base import SolverBase
 from em_ray_tracer.solvers.integrators import RHS, rk4_step
@@ -99,7 +99,7 @@ class ParaxialEquations(EquationsOfMotion):
         Deliberately not under torch.no_grad(): the graph back to the field values is kept.
         Works for a 0-d z (on-the-fly) and for a whole grid (table build).
         """
-        component=self.component
+        component : FieldComponent = self.component
         zero = torch.zeros_like(z)
         b = db = dphi = d2phi = zero
         phi = self.voltage + zero

@@ -29,13 +29,15 @@ with coefficients ``const_k * d^(m_k)/dz^(m_k)`` of the axial profile, so they a
 """
 
 from __future__ import annotations
+
+from math import factorial
 from typing import TYPE_CHECKING, NamedTuple
 
 import torch
-from math import factorial
 
-from em_ray_tracer.fields.base import AxialField, Field3D
 from em_ray_tracer.constants import DTYPE
+from em_ray_tracer.fields.base import AxialField, Field3D
+
 if TYPE_CHECKING:
     from em_ray_tracer.components.field_lenses import FieldComponent
 

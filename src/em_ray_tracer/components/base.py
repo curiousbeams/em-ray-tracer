@@ -8,7 +8,7 @@ from torch import nn
 
 from em_ray_tracer.rays import Rays
 from em_ray_tracer.transfer_map import TransferMap, translation_map
-from em_ray_tracer.utils import as_parameter
+from em_ray_tracer.utilities.utils import as_parameter
 
 
 class ComponentBase(nn.Module, ABC):
