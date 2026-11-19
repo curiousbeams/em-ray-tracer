@@ -13,7 +13,7 @@ ADJUST the block marked CONFIG (object position, CONE, import paths, convention)
 
 import pytest
 
-from em_ray_tracer.utilities.glaser_reference import GlaserLens, glaser_c30, trace_cs
+from tests.test_utilities.glaser_reference import GlaserLens, glaser_c30, trace_cs
 
 # ----------------------------------------------------------------------------- CONFIG
 FACTOR_A=60
