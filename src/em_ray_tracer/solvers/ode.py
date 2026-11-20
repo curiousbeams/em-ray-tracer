@@ -8,7 +8,6 @@ thin elements traces identically under either solver.
 
 import math
 from abc import ABC, abstractmethod
-from time import perf_counter
 from typing import Self
 
 import torch
@@ -245,10 +244,7 @@ class ODESolver(SolverBase):
                 n = max(1, math.ceil(float((z1 - z0).detach()) / dz))
                 h = (z1 - z0) / n
                 state = rays.state
-                t0=perf_counter()
                 f.pre_calc(n_steps=n)
-                t1=perf_counter()
-                print("time to setup pre-calculated table:",t1-t0)
                 for i in range(n):
                     state = rk4_step(f, z0 + i * h, state, h)
                     if snapshots is not None : 

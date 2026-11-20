@@ -8,10 +8,13 @@ import torch
 
 from em_ray_tracer.aberrations.basis import AberrationBasis
 from em_ray_tracer.aberrations.fit import fit_coefficients
+from em_ray_tracer.constants import DTYPE
 from em_ray_tracer.rays import Rays
 
 if TYPE_CHECKING:
     from em_ray_tracer.solvers.base import Trace
+
+RTOL=torch.finfo(DTYPE).eps**0.5
 
 
 @dataclass
@@ -31,6 +34,7 @@ class AberrationCoefficients:
     values: dict[str, torch.Tensor]
     basis: AberrationBasis
     residual_rms: torch.Tensor
+    rotation: torch.Tensor
 
     # region --- entry points ---
 
@@ -42,10 +46,12 @@ class AberrationCoefficients:
         w: torch.Tensor,
         w_out: torch.Tensor,
         weight: torch.Tensor | None = None,
+        rotation: float|None=None,
+        spread_tol: tuple[float,float]|None=None
     ) -> Self:
         """Fit from complex input slopes, input positions and output positions."""
-        values, residual = fit_coefficients(basis, omega, w, w_out, weight)
-        return cls(values=values, basis=basis, residual_rms=residual)
+        values, residual, larmor_rotation = fit_coefficients(basis, omega, w, w_out, weight=weight,spread_tol=spread_tol,rotation=rotation)
+        return cls(values=values, basis=basis, residual_rms=residual,rotation=larmor_rotation)
 
     @classmethod
     def from_rays(
@@ -54,6 +60,7 @@ class AberrationCoefficients:
         rays_in: Rays,
         rays_out: Rays,
         reference: tuple[complex, complex] | None = None,
+        rotation: float|None=None
     ) -> Self:
         """Fit output rays against the input rays they came from.
 
@@ -68,12 +75,18 @@ class AberrationCoefficients:
             omega_ref = (rays_in.slope * weight).sum(-1, keepdim=True) / norm
         else:
             w_ref, omega_ref = reference
+
+        omega_roundoff_floor=abs(omega_ref)*RTOL
+        w_roundoff_floor=abs(w_ref)*RTOL
+
         return cls.fit(
             basis,
             omega=rays_in.slope - omega_ref,
             w=rays_in.w - w_ref,
             w_out=rays_out.w,
             weight=weight,
+            rotation=rotation, 
+            spread_tol=(w_roundoff_floor,omega_roundoff_floor)
         )
 
     @classmethod
@@ -83,15 +96,18 @@ class AberrationCoefficients:
         basis: AberrationBasis,
         plane: str | None = None,
         reference: tuple[complex, complex] | None = None,
+        rotation: float|None = None
     ) -> Self:
         """Fit the rays at ``plane`` (default: the end of the trace) against the input rays."""
         rays_out = trace.final if plane is None else trace.planes[plane]
-        return cls.from_rays(basis, trace.initial, rays_out, reference)
+        return cls.from_rays(basis, trace.initial, rays_out, reference,rotation=rotation)
 
     # endregion --- entry points ---
 
     def __getitem__(self, name: str) -> torch.Tensor:
         return self.values[name]
+
+
 
     def magnitude(self, name: str) -> torch.Tensor:
         return self.values[name].abs()
@@ -136,7 +152,7 @@ class AberrationCoefficients:
             a, b, c, d = term.powers
             factor = slope_scale ** (a + b - 1) * position_scale ** (c + d)
             values[term.name] = self.values[term.name] / factor
-        return type(self)(values=values, basis=self.basis, residual_rms=self.residual_rms)
+        return type(self)(values=values, basis=self.basis, residual_rms=self.residual_rms, rotation=self.rotation)
 
     def __repr__(self) -> str:
         def fmt(v: torch.Tensor) -> str:

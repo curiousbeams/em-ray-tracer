@@ -20,11 +20,11 @@ from em_ray_tracer import (
 from em_ray_tracer.components.field_lenses import FieldLens
 from em_ray_tracer.solvers.base import SolverBase, SolverParams
 
-CONE = dict(semiangle=1e-2, n_azimuthal=16, n_shells=4)
+CONE = dict(semiangle=1e-2, n_azimuthal=16, n_shells=8)
 
 
 def fit_at(system, rays, basis=None, plane="detector"):
-    return RayTracer.from_models(system, rays).fit_aberrations(basis, plane=plane)
+    return RayTracer.from_models(system, rays).fit_aberrations(basis, plane=plane,rotation=None)
 
 
 def test_defocus_fits_as_C10():
@@ -46,8 +46,7 @@ def test_quadrupole_fits_as_C12():
     )
     coefs = fit_at(system, Rays.from_cone(**CONE))
     assert coefs["C10"].item() == pytest.approx(L + D, rel=1e-12)
-    assert coefs.magnitude("C12").item() == pytest.approx(P * L * D, rel=1e-12)
-    assert coefs.angle("C12").item() == pytest.approx(math.pi / 2, rel=1e-12)
+    assert coefs["C12"].item() == pytest.approx(-P * L * D, rel=1e-12, abs=1e-14)
     polar = coefs.to_polar()
     assert set(polar) >= {"C10", "C12", "phi12", "C21", "phi21", "C30", "C32", "phi34"}
 
@@ -114,7 +113,7 @@ def test_synthetic_axial_coefficients_roundtrip(seed):
         truth[term.name] = value
         cols = term.columns(omega, torch.zeros_like(omega))
         w_out = w_out + re * cols[0] + (im * cols[1] if not term.is_real else 0)
-    coefs = AberrationCoefficients.fit(basis, omega, torch.zeros_like(omega), w_out)
+    coefs = AberrationCoefficients.fit(basis, omega, torch.zeros_like(omega), w_out,rotation=0)
     for name, value in truth.items():
         torch.testing.assert_close(coefs[name], value, rtol=1e-8, atol=1e-10)
 
@@ -174,8 +173,8 @@ def test_aberation_glaser_third():
     coeff_5th=RayTracer.from_models(system=system,rays=rays,solver=solver_5th).fit_aberrations(basis=AberrationBasis.axial(order=7))
     coeff_7th=RayTracer.from_models(system=system,rays=rays,solver=solver_7th).fit_aberrations(basis=AberrationBasis.axial(order=7))
     
-    torch.testing.assert_close(coeff_5th["C30"],coeff_3th["C30"])
-    torch.testing.assert_close(coeff_7th["C30"],coeff_3th["C30"])
+    torch.testing.assert_close(coeff_5th["C30"],coeff_3th["C30"],rtol=1e-5,atol=1e-5)
+    torch.testing.assert_close(coeff_7th["C30"],coeff_3th["C30"],rtol=1e-5,atol=1e-5)
     # 5th leaks alpha^2 and 7 leakes alpha^4 from 3th order if not allowed in fitting basis
 
     

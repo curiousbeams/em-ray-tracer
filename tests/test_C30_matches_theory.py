@@ -58,7 +58,7 @@ def test_reference_is_positive_and_consistent():
 
 
 # ---------------------------------------------------------------- part 2: your package
-def _fit(order: int) -> dict:
+def _fit(order: int,z_img=None) -> dict:
     pytest.importorskip("em_ray_tracer")   # only the package tests skip, not the reference checks
     # ADJUST these imports to your package layout.
     from em_ray_tracer.aberrations.basis import AberrationBasis
@@ -70,18 +70,20 @@ def _fit(order: int) -> dict:
     from em_ray_tracer.tracer import RayTracer
 
     glaser = FieldLens.glaser(B0=B0, a=A, z=ZC,extent=FACTOR_A)
+    if z_img:
+        glaser.z_end_rel_cut=z_img-ZC
     system = OpticalSystem.from_components(glaser)
     solver = SolverBase.from_params(params=SolverParams.NonParaxial(expansion_order=order))
     rays = Rays.from_cone(**CONE, voltage=VOLTAGE)
     final=RayTracer.from_models(system=system, rays=rays, solver=solver).fit_aberrations(basis=AberrationBasis.axial(order=7))
-    print(final["C10"])
     return final
 
 @pytest.mark.parametrize("order", ORDERS)
 def test_fitted_c30_matches_theory(order):
     ref = _theory()
-    expected = ref["Cs_image"] if CONVENTION == "image" else ref["Cs_object"]
-    fitted = float(_fit(order)["C30"])
+    z_img=ref["z_img"]
+    expected = ref["M"]*(ref["Cs_image"] if CONVENTION == "image" else ref["Cs_object"])
+    fitted = float(_fit(order,z_img)["C30"])
     msg = (
         f"fitted C30 = {fitted:.8g}, theory ({CONVENTION}-referred) = {expected:.8g}, "
         f"ratio = {fitted / expected:.6g}\n"
@@ -97,7 +99,9 @@ def test_fitted_c30_matches_theory(order):
 def test_fitted_c30_is_positive(order):
     """Scherzer: round, static, space-charge-free lenses have positive Cs. A sign flip here
     points at the fitter's sign convention (for example abTEM-style) or a field-sign error."""
-    assert float(_fit(order)["C30"]) > 0
+    ref=_theory()
+    M=ref["M"]
+    assert float(_fit(order)["C30"]/M) > 0
 
 
 def test_c30_independent_of_expansion_order():

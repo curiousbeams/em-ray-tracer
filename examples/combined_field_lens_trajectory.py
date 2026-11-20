@@ -25,7 +25,7 @@ B_sampled=B_sampled# + max(B_sampled)*torch.rand_like(B_sampled)*1e-3 #to see th
 Phi_sampled=lens_E.axial_derivative(0,z_sample_space)["electrostatic"]
 Phi_sampled=Phi_sampled #+ max(Phi_sampled)*torch.rand_like(Phi_sampled)*1e-3
 
-np.savetxt("examples/combined_field_lens_sampled.csv",torch.stack([z_sample_space,B_sampled],dim=-1),delimiter=delimiter)
+np.savetxt("examples/combined_field_lens_sampled.csv",torch.stack([z_sample_space,B_sampled,Phi_sampled],dim=-1),delimiter=delimiter)
 
 
 
@@ -35,7 +35,7 @@ t0=time()
 B_kwargs= {"window_size" : 14,"order" : 7,"lam" : 0} #Parameters for B-spline -- set lam=0.1 for smoothing of noise
 fieldlens=FieldLens.from_file_with_axial_samples(
     "examples/combined_field_lens_sampled.csv",
-    kind_set="magnetic",z=60e-3,name="F0",
+    kind_set=("magnetic","electrostatic"),z=60e-3,name="F0",
     delimiter=delimiter,grounded_check=False, 
     B_kwargs=B_kwargs) 
 

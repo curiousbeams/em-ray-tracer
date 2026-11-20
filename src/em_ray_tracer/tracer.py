@@ -74,10 +74,11 @@ class RayTracer:
         basis: AberrationBasis | None = None,
         plane: str | None = None,
         trace: Trace | None = None,
+        rotation: float|None = None
     ) -> AberrationCoefficients:
         """Fit ``basis`` (default: axial to third order) to the rays at ``plane``."""
         trace = trace or self.trace()
-        return AberrationCoefficients.from_trace(trace, basis or AberrationBasis.axial(), plane)
+        return AberrationCoefficients.from_trace(trace, basis or AberrationBasis.axial(), plane,rotation=rotation)
 
     # endregion --- forward ---
 
