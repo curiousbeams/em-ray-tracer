@@ -24,7 +24,7 @@ CONE = dict(semiangle=1e-2, n_azimuthal=16, n_shells=8)
 
 
 def fit_at(system, rays, basis=None, plane="detector"):
-    return RayTracer.from_models(system, rays).fit_aberrations(basis, plane=plane,rotation=None)
+    return RayTracer.from_models(system, rays).fit_aberrations(basis, plane=plane,rotation="standard")
 
 
 def test_defocus_fits_as_C10():
@@ -37,6 +37,8 @@ def test_defocus_fits_as_C10():
             assert value.abs().item() < 1e-12, name
     assert coefs.residual_rms.item() < 1e-15
 
+def angle_diff(a, b, period):
+    return (a - b + period / 2) % period - period / 2
 
 def test_quadrupole_fits_as_C12():
     # source at 0, quadrupole P at L, detector at L + D: w = (L + D) omega - P L D conj(omega)
@@ -46,7 +48,8 @@ def test_quadrupole_fits_as_C12():
     )
     coefs = fit_at(system, Rays.from_cone(**CONE))
     assert coefs["C10"].item() == pytest.approx(L + D, rel=1e-12)
-    assert coefs["C12"].item() == pytest.approx(-P * L * D, rel=1e-12, abs=1e-14)
+    assert coefs.magnitude("C12").item() == pytest.approx(P * L * D, rel=1e-12)
+    assert abs(angle_diff(coefs.angle("C12").item(), math.pi / 2, math.pi)) < 1e-12
     polar = coefs.to_polar()
     assert set(polar) >= {"C10", "C12", "phi12", "C21", "phi21", "C30", "C32", "phi34"}
 

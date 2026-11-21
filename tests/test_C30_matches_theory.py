@@ -12,6 +12,7 @@ ADJUST the block marked CONFIG (object position, CONE, import paths, convention)
 
 
 import pytest
+import torch
 
 from tests.test_utilities.glaser_reference import GlaserLens, glaser_c30, trace_cs
 
@@ -47,7 +48,7 @@ def test_reference_integral_matches_exact_trace(z_obj_in_a):
     z_obj = Z_OBJECT#ZC + z_obj_in_a * A
     ref = glaser_c30(lens, VOLTAGE, z_obj)
     traced = trace_cs(lens, VOLTAGE, z_obj, ref["z_img"], ref["M"])
-    print(trace_cs(lens, VOLTAGE, z_obj, ref["z_img"], ref["M"]))
+    #print(trace_cs(lens, VOLTAGE, z_obj, ref["z_img"], ref["M"]))
     assert traced == pytest.approx(ref["Cs_object"], rel=1e-6)
 
 
@@ -58,8 +59,8 @@ def test_reference_is_positive_and_consistent():
 
 
 # ---------------------------------------------------------------- part 2: your package
-def _fit(order: int,z_img=None) -> dict:
-    pytest.importorskip("em_ray_tracer")   # only the package tests skip, not the reference checks
+def _fit(order: int,z_img=None,rotation = "larmor") -> dict:
+    #pytest.importorskip("em_ray_tracer")   # only the package tests skip, not the reference checks
     # ADJUST these imports to your package layout.
     from em_ray_tracer.aberrations.basis import AberrationBasis
     from em_ray_tracer.components.field_lenses import FieldLens
@@ -75,7 +76,7 @@ def _fit(order: int,z_img=None) -> dict:
     system = OpticalSystem.from_components(glaser)
     solver = SolverBase.from_params(params=SolverParams.NonParaxial(expansion_order=order))
     rays = Rays.from_cone(**CONE, voltage=VOLTAGE)
-    final=RayTracer.from_models(system=system, rays=rays, solver=solver).fit_aberrations(basis=AberrationBasis.axial(order=7))
+    final=RayTracer.from_models(system=system, rays=rays, solver=solver).fit_aberrations(basis=AberrationBasis.axial(order=7),rotation=rotation)
     return final
 
 @pytest.mark.parametrize("order", ORDERS)
@@ -109,3 +110,14 @@ def test_c30_independent_of_expansion_order():
     c = [abs(float(_fit(o)["C30"])) for o in ORDERS]
     assert c[1] == pytest.approx(c[0], rel=RTOL)
     assert c[2] == pytest.approx(c[1], rel=RTOL)
+
+@pytest.mark.parametrize("order",ORDERS)
+def test_larmor_theta_matches_direct_fit(order):
+    tol=1e-2
+    
+    theta_direct=_fit(order,rotation="standard").rotation
+    theta_larmor=_fit(order,rotation="larmor").rotation
+    d = theta_larmor - theta_direct
+    # defined modulo pi in the joint fit, so compare on the circle of period pi
+    found=torch.sin(d).abs()
+    assert found < tol

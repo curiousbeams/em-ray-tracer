@@ -9,11 +9,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from em_ray_tracer.components.field_lenses import FieldComponent
 from em_ray_tracer.components.thin import Aperture, Biprism, Deflector, Plane, ThinLens
 from em_ray_tracer.rays import Rays, X, Y
 from em_ray_tracer.solvers import IntegratorParams, ODESolver, Trace
-from em_ray_tracer.system import Element, Gap, OpticalSystem
+from em_ray_tracer.system import OpticalSystem
 from em_ray_tracer.tracer import RayTracer
 
 
@@ -199,39 +198,10 @@ class Standardplots:
 
         if show_fields:
             offset=1
-            segments=system.segments(z_start=rays.z,z_end=z_end)
-            z_space=[]
-            phi_space=[]
-            b_space=[]
-            for seg in segments:
-                match seg:
-                    case Gap(z0,z1):
-                        z_space.append([z0,z1])
-                        phi_space.append([0,0])
-                        b_space.append([0,0])
-                    case Element(c):
-                        if not isinstance(c,FieldComponent):
-                            z_space.append([c.z_start,c.z_end])
-                            phi_space.append([0,0])
-                            b_space.append([0,0])
-                            continue
-                        z_local=np.linspace(c.z_start,c.z_end,1000)
-
-                        deriv=c.axial_derivative(0,z_local)
-                        phi_elem=deriv.get("electrostatic")
-                        b_elem=deriv.get("magnetic")
-
-                        if phi_elem is None:
-                            phi_elem=torch.zeros_like(z_local)
-                        if b_elem is None:
-                            b_elem=torch.zeros_like(z_local)
-                        z_space.append(z_local)
-                        phi_space.append(phi_elem)
-                        b_space.append(b_elem)
-            #--- flatten ---
-            phi_space=np.concatenate(phi_space)
-            b_space=np.concatenate(b_space)
-            z_space=np.concatenate(z_space)
+            z_space, phi_space,b_space=system.fields(z_start=rays.z,z_end=z_end)
+            z_space=z_space.detach().cpu().numpy()
+            phi_space=phi_space.detach().cpu().numpy()
+            b_space=b_space.detach().cpu().numpy()
             #--- normalize ---
             if np.max(abs(phi_space)) != 0 :
                 phi_space=phi_space/np.max(abs(phi_space)) 

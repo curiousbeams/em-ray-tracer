@@ -8,6 +8,7 @@ import torch
 from torch import nn
 
 from em_ray_tracer.components.base import ComponentBase
+from em_ray_tracer.constants import DTYPE
 from em_ray_tracer.optimize.mixin import OptimizerMixin
 from em_ray_tracer.transfer_map import TransferMap, drift_map
 
@@ -239,6 +240,45 @@ class OpticalSystem(nn.Module, OptimizerMixin):
         )
 
     # endregion --- first-order optics ---
+
+    #  region --- fields ---
+
+    def fields(self,z_start : torch.Tensor | float, z_end : torch.Tensor | float):
+        from em_ray_tracer.components.field_lenses import FieldComponent
+        phi_space=[]
+        b_space=[]
+        z_space=[]
+        for seg in self.segments(z_start=z_start,z_end=z_end):
+            match seg:
+                case Gap(z0,z1):
+                    z_space.append(torch.stack([z0,z1]).to(DTYPE))
+                    phi_space.append(torch.zeros(2,dtype=DTYPE))
+                    b_space.append(torch.zeros(2,dtype=DTYPE))
+                case Element(c):
+                    if not isinstance(c,FieldComponent):
+                        z_space.append(torch.stack([c.z_start,c.z_end]).to(DTYPE))
+                        phi_space.append(torch.zeros(2,dtype=DTYPE))
+                        b_space.append(torch.zeros(2,dtype=DTYPE))
+                        continue
+                    z_local=torch.linspace(c.z_start,c.z_end,1000,dtype=DTYPE)
+
+                    deriv=c.axial_derivative(0,z_local)
+                    phi_elem=deriv.get("electrostatic")
+                    b_elem=deriv.get("magnetic")
+
+                    if phi_elem is None:
+                        phi_elem=torch.zeros_like(z_local)
+                    if b_elem is None:
+                        b_elem=torch.zeros_like(z_local)
+                    z_space.append(z_local)
+                    phi_space.append(phi_elem)
+                    b_space.append(b_elem)
+        z_space=torch.cat(z_space)
+        phi_space=torch.cat(phi_space)
+        b_space=torch.cat(b_space)
+        return z_space, phi_space, b_space
+
+    # endregion --- fields ---
 
     # region --- optimization ---
 

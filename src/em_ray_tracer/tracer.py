@@ -11,6 +11,7 @@ import torch
 
 from em_ray_tracer.aberrations.basis import AberrationBasis
 from em_ray_tracer.aberrations.coefficients import AberrationCoefficients
+from em_ray_tracer.aberrations.rotation import larmor_fit
 from em_ray_tracer.optimize.objectives import Evaluation, Objective
 from em_ray_tracer.optimize.params import (
     OptimizerParams,
@@ -74,10 +75,22 @@ class RayTracer:
         basis: AberrationBasis | None = None,
         plane: str | None = None,
         trace: Trace | None = None,
-        rotation: float|None = None
+        rotation: torch.Tensor | Literal["larmor","standard"] = "standard"
     ) -> AberrationCoefficients:
-        """Fit ``basis`` (default: axial to third order) to the rays at ``plane``."""
+        """Fit ``basis`` (default: axial to third order) to the rays at ``plane``. 
+        The rotation is removed beforehand either by direct fitting using "standard" 
+        or by calculating the larmor rotation from the b-field (first order) using "larmor" """
         trace = trace or self.trace()
+        if rotation == "larmor":
+            z_out=trace.final.z if plane is None else trace.planes[plane].z
+            z_set, phi_set, b_set=self.system.fields(z_start=trace.initial.z, z_end=z_out)
+            if not b_set.any():
+                rotation="standard"
+                raise Warning("system has no magnetic field to retrieve larmor rotation from, " \
+                "used standard rotation fitter instead")
+            else :
+                voltage=trace.initial.voltage
+                rotation=larmor_fit(z_set,phi_set,b_set,voltage)
         return AberrationCoefficients.from_trace(trace, basis or AberrationBasis.axial(), plane,rotation=rotation)
 
     # endregion --- forward ---

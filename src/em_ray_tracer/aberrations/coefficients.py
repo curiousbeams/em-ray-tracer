@@ -2,7 +2,7 @@
 
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, Literal, Self
 
 import torch
 
@@ -46,7 +46,7 @@ class AberrationCoefficients:
         w: torch.Tensor,
         w_out: torch.Tensor,
         weight: torch.Tensor | None = None,
-        rotation: float|None=None,
+        rotation: torch.Tensor | Literal["standard"]  = "standard",
         spread_tol: tuple[float,float]|None=None
     ) -> Self:
         """Fit from complex input slopes, input positions and output positions."""
@@ -60,7 +60,7 @@ class AberrationCoefficients:
         rays_in: Rays,
         rays_out: Rays,
         reference: tuple[complex, complex] | None = None,
-        rotation: float|None=None
+        rotation: torch.Tensor | Literal["standard"]  = "standard"
     ) -> Self:
         """Fit output rays against the input rays they came from.
 
@@ -96,7 +96,7 @@ class AberrationCoefficients:
         basis: AberrationBasis,
         plane: str | None = None,
         reference: tuple[complex, complex] | None = None,
-        rotation: float|None = None
+        rotation: torch.Tensor | Literal["standard"]  = "standard"
     ) -> Self:
         """Fit the rays at ``plane`` (default: the end of the trace) against the input rays."""
         rays_out = trace.final if plane is None else trace.planes[plane]
