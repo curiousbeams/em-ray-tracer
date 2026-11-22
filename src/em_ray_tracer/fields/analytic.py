@@ -33,6 +33,7 @@ The tests check it against nested autograd instead (tests/test_fields.py).
 """
 
 import math
+from typing import Callable, Literal
 
 import torch
 
@@ -47,7 +48,7 @@ def pole_derivative(n: int, z: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
     psi = torch.atan2(-a, z)
     return (-1) ** (n + 1) * math.factorial(n) * torch.sin((n + 1) * psi) / (a * rho ** (n + 1))
 
-
+# region --- standard ---
 class GlaserField(AxialField):
     """Glaser's bell-shaped field, B(z) = B0 / (1 + (z/a)^2).
 
@@ -125,3 +126,38 @@ class SchiskeField(AxialField):
         """The n-th derivative of phi(z) / phi0: (n == 0) - k^2 a^2 f^(n)(z)."""
         dip = -(self.k**2) * self.a**2 * pole_derivative(n, z, self.a)
         return {"electrostatic" : self.voltage*dip}
+
+# endregion --- standard ---
+# region --- arbitrary ---
+
+class AxialAnalytical(AxialField):
+    """On-axis profile given as a function of a single (0-d) z.
+
+    ``axial`` maps a 0-d tensor z to a 0-d tensor (single field kind) or to a
+    tensor of shape (K,) (one entry per name in ``fieldkind``, same order).
+    It must be written with torch ops only (no .item(), no in-place ops).
+    """
+    def __init__(self, axial:Callable[[torch.Tensor],torch.Tensor],fieldkind : Literal["electrostatic"]|Literal["magnetic"]|tuple[str,...], half_extent : float) -> None:
+        super().__init__()
+        self.dlist=[axial]
+        self.fieldkind=(fieldkind,) if isinstance(fieldkind,str) else tuple(fieldkind)
+        self._half_extent=half_extent
+
+    def derivative(self, n: int, z: torch.Tensor) -> dict:
+        """The n-th z-derivative of the axial profile at ``z`` (n = 0 is the profile)."""
+        while len(self.dlist) <= n:
+            self.dlist.append(torch.func.jacfwd(self.dlist[-1]))
+        val=torch.vmap(self.dlist[n])(z.reshape(-1))
+        val=val.reshape(*z.shape,-1)
+        if val.shape[-1] != len(self.fieldkind):
+            raise ValueError(f"axial returned {val.shape[-1]} component(s) but fieldkind has {len(self.fieldkind)}")
+        return {name:val[...,i] for i,name in enumerate(self.fieldkind) }
+
+
+    @property
+    def half_extent(self) -> float:
+        """Half-width [m] beyond which the field is negligible; sets the integration span."""
+        return self._half_extent
+
+
+

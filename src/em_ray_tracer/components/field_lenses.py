@@ -13,12 +13,12 @@ A ``FieldLens`` occupies [z - half_extent, z + half_extent]. Solvers handle it i
 The field's own z coordinate is measured from the lens centre ``z``.
 """
 
-from typing import Callable, Self
+from typing import Callable, Literal, Self
 
 import torch
 
 from em_ray_tracer.components.base import ComponentBase
-from em_ray_tracer.fields.analytic import GlaserField, SchiskeField
+from em_ray_tracer.fields.analytic import AxialAnalytical, GlaserField, SchiskeField
 from em_ray_tracer.fields.base import AxialField, FieldKind
 from em_ray_tracer.fields.expansion import LaplaceExpansion
 from em_ray_tracer.fields.sampled import SampledAxialField
@@ -147,7 +147,22 @@ class FieldLens(FieldComponent):
             The lens, whose axial derivatives follow the fitted spline.
         """
         return cls(SampledAxialField.from_file(path, kind_set, delimiter, grounded_check = grounded_check,**B_kwargs),z=z,**kwargs)
-        
+
+    @classmethod 
+    def from_axial_analytical(cls,
+                              axial:Callable[[torch.Tensor],torch.Tensor],
+                              fieldkind : Literal["electrostatic"]|Literal["magnetic"]|tuple[str,...],
+                              z : float,
+                              half_extent : float,
+                              **kwargs
+                              ) -> Self:
+        """On-axis profile given as a function of a single (0-d) z.
+
+        ``axial`` maps a 0-d tensor z to a 0-d tensor (single field kind) or to a
+        tensor of shape (K,) (one entry per name in ``fieldkind``, same order).
+        It must be written with torch ops only (no .item(), no in-place ops).
+        """
+        return cls(AxialAnalytical(axial=axial,fieldkind=fieldkind,half_extent=half_extent),z=z,**kwargs)
 
     def local_transfer_map(self, order: int = 1, voltage: float | None = None) -> TransferMap:
         """Constructs local transfer map from the for principal rays.
