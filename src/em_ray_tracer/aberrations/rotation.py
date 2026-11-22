@@ -1,6 +1,6 @@
 import torch
 
-from em_ray_tracer.constants import ETA, relativistic_potential, DTYPE
+from em_ray_tracer.constants import DTYPE, ETA, relativistic_potential
 from em_ray_tracer.interpolation import b_spline
 
 

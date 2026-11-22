@@ -2,7 +2,7 @@
 
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 import torch
 from torch import nn
@@ -163,7 +163,7 @@ class OpticalSystem(nn.Module, OptimizerMixin):
 
     # endregion --- geometry ---
 
-    def forward(self, rays, solver=None, z_end=None, record: bool = False):
+    def forward(self, rays, solver=None, z_end=None, record: bool|Literal["light"] = False):
         """Trace ``rays`` (default solver: first-order transfer matrices) and return the
         ``Trace``. This makes the system usable with ``torch.func`` (``functional_call``,
         ``vmap``, ``jacrev``) as a function of its parameters."""

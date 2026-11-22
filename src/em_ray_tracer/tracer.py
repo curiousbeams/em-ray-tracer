@@ -4,6 +4,7 @@ Build it from its parts with ``from_models``, then ``trace``, ``fit_aberrations`
 ``optimize``.
 """
 
+import warnings
 from collections.abc import Sequence
 from typing import Literal, Self
 
@@ -18,10 +19,17 @@ from em_ray_tracer.optimize.params import (
     OptimizerParamsType,
     SchedulerParamsType,
 )
-from em_ray_tracer.rays import Rays
+from em_ray_tracer.rays import Rays, X, Y
 from em_ray_tracer.solvers.base import SolverBase, Trace
 from em_ray_tracer.solvers.params import SolverParams, SolverParamsType
 from em_ray_tracer.system import OpticalSystem
+
+
+def _mean_r2(x : torch.Tensor, y : torch.Tensor):
+    r2=torch.var(x)+torch.var(y)
+    return r2
+
+
 
 
 class RayTracer:
@@ -69,6 +77,37 @@ class RayTracer:
     def gaussian_image(self) -> tuple[torch.Tensor, torch.Tensor]:
         """Paraxial ``(z_image, magnification)`` of the plane the rays start from."""
         return self.system.gaussian_image(self.rays.z, voltage=self.rays.voltage)
+    
+    def plane_of_least_confusion(self, z_initial: float|torch.Tensor|None = None,z_tol : float = 1e-8):
+        from em_ray_tracer.components.thin import Plane
+        if z_initial is None:
+            z_initial=self.gaussian_image()[0]
+
+
+        self.system.add(Plane(name="POLC", z=float(z_initial)))
+        plane=self.system["POLC"]
+        z=plane.z
+        z.requires_grad_(True)
+
+        def closure():
+            state=self.trace().planes["POLC"].state
+            x=state[...,X]
+            y=state[...,Y]
+            r2=_mean_r2(x,y)
+            z.grad=torch.autograd.grad(r2,z)[0]
+            return r2
+        
+        plane_opt=torch.optim.LBFGS([z],lr=1,max_iter=50,tolerance_grad=z_tol,tolerance_change=1e-14,line_search_fn="strong_wolfe")
+        plane_opt.step(closure)
+
+        if z.grad is not None and z.grad.abs()>1e-8 :
+            warnings.warn("POLC may not have converged")
+        
+        z.requires_grad_(False)
+        return z.detach().clone()
+
+
+
 
     def fit_aberrations(
         self,
@@ -86,7 +125,7 @@ class RayTracer:
             z_set, phi_set, b_set=self.system.fields(z_start=trace.initial.z, z_end=z_out)
             if not b_set.any():
                 rotation="standard"
-                raise Warning("system has no magnetic field to retrieve larmor rotation from, " \
+                warnings.warn("system has no magnetic field to retrieve larmor rotation from, " \
                 "used standard rotation fitter instead")
             else :
                 voltage=trace.initial.voltage

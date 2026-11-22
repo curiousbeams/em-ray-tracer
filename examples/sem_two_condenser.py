@@ -18,6 +18,7 @@ system = OpticalSystem.from_components(
 )
 rays = Rays.from_fan(semiangle=math.radians(15), num_rays=100)
 tracer = RayTracer.from_models(system, rays)
+tracer.plane_of_least_confusion()
 
 trace = tracer.trace(record=True)
 z_image, magnification = tracer.gaussian_image()
