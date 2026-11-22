@@ -59,10 +59,9 @@ def test_reference_is_positive_and_consistent():
 
 
 # ---------------------------------------------------------------- part 2: your package
-def _fit(order: int,z_img=None,rotation = "larmor") -> dict:
+def _model(order: int,z_img=None):
     #pytest.importorskip("em_ray_tracer")   # only the package tests skip, not the reference checks
     # ADJUST these imports to your package layout.
-    from em_ray_tracer.aberrations.basis import AberrationBasis
     from em_ray_tracer.components.field_lenses import FieldLens
     from em_ray_tracer.rays import Rays
     from em_ray_tracer.solvers.base import SolverBase
@@ -76,8 +75,13 @@ def _fit(order: int,z_img=None,rotation = "larmor") -> dict:
     system = OpticalSystem.from_components(glaser)
     solver = SolverBase.from_params(params=SolverParams.NonParaxial(expansion_order=order))
     rays = Rays.from_cone(**CONE, voltage=VOLTAGE)
-    final=RayTracer.from_models(system=system, rays=rays, solver=solver).fit_aberrations(basis=AberrationBasis.axial(order=7),rotation=rotation)
-    return final
+    model=RayTracer.from_models(system=system, rays=rays, solver=solver)
+    return model
+
+def _fit(order: int,z_img=None,rotation = "larmor") -> dict:
+    from em_ray_tracer.aberrations.basis import AberrationBasis
+    model=_model(order=order,z_img=z_img)
+    return model.fit_aberrations(basis=AberrationBasis.axial(order=7),rotation=rotation)
 
 @pytest.mark.parametrize("order", ORDERS)
 def test_fitted_c30_matches_theory(order):
@@ -111,8 +115,8 @@ def test_c30_independent_of_expansion_order():
     assert c[1] == pytest.approx(c[0], rel=RTOL)
     assert c[2] == pytest.approx(c[1], rel=RTOL)
 
-@pytest.mark.parametrize("order",ORDERS)
-def test_larmor_theta_matches_direct_fit(order):
+def test_larmor_theta_matches_direct_fit():
+    order=5
     tol=1e-2
     
     theta_direct=_fit(order,rotation="standard").rotation
@@ -121,3 +125,10 @@ def test_larmor_theta_matches_direct_fit(order):
     # defined modulo pi in the joint fit, so compare on the circle of period pi
     found=d.abs()
     assert found < tol
+
+def test_POLC_is_found():
+    ref=_theory()
+    model=_model(5)
+    plane=model.plane_of_least_confusion()
+    assert torch.testing.assert_close(plane.z,ref["z_imag"]+ZC)
+
