@@ -119,5 +119,5 @@ def test_larmor_theta_matches_direct_fit(order):
     theta_larmor=_fit(order,rotation="larmor").rotation
     d = theta_larmor - theta_direct
     # defined modulo pi in the joint fit, so compare on the circle of period pi
-    found=torch.sin(d).abs()
+    found=d.abs()
     assert found < tol

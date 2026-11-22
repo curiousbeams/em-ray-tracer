@@ -90,7 +90,10 @@ class RayTracer:
                 "used standard rotation fitter instead")
             else :
                 voltage=trace.initial.voltage
-                rotation=larmor_fit(z_set,phi_set,b_set,voltage)
+                #z_imag, magnification=self.system.gaussian_image(z_object=trace.initial.z,voltage=voltage)
+                #argument=magnification.angle()
+                rotation=larmor_fit(z_set,phi_set,b_set,voltage=voltage)
+                #print(f"from the gaussian {argument} rad at z_img {z_i} was found while from larmor fit {rotation} rad was found")
         return AberrationCoefficients.from_trace(trace, basis or AberrationBasis.axial(), plane,rotation=rotation)
 
     # endregion --- forward ---

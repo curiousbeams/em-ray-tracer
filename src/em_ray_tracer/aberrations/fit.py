@@ -36,12 +36,15 @@ def fit_coefficients(
         If the rays do not constrain some term, e.g. a meridional fan (y = y' = 0) cannot
         separate x- from y-astigmatism. The message names the terms.
     """
+
+    # --- remove rotation ---
     if rotation == "standard":    
         rotation = fit_rotation(w,omega,w_out,weight=weight,spread_tol=spread_tol)
     else :
         rotation = torch.as_tensor(rotation,dtype=DTYPE).detach()
-    
     w_out=w_out*torch.exp(-1j*rotation) #de-rotation
+    
+    # --- final fit ---
     A, index = basis.design_matrix(omega, w)
     if weight is None:
         weight = torch.ones(w_out.shape, dtype=A.real.dtype, device=A.device)

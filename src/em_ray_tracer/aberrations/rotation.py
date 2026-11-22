@@ -1,6 +1,6 @@
 import torch
 
-from em_ray_tracer.constants import ETA, relativistic_potential
+from em_ray_tracer.constants import ETA, relativistic_potential, DTYPE
 from em_ray_tracer.interpolation import b_spline
 
 
@@ -68,7 +68,7 @@ def larmor_fit(z : torch.Tensor,phi : torch.Tensor,b : torch.Tensor,voltage : to
     b_func=b_spline(z,b)
     phi_func=b_spline(z,phi)
 
-    z_space=torch.linspace(z[0],z[-1],10**4)
+    z_space=torch.linspace(z[0],z[-1],10**4,dtype=DTYPE)
     h=z_space[1:]-z_space[:-1]
     val=torch.sqrt(4*relativistic_potential(phi_func(0,z_space)+voltage)).pow(-1)*b_func(0,z_space)
 

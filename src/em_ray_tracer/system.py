@@ -201,6 +201,8 @@ class OpticalSystem(nn.Module, OptimizerMixin):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Paraxial image of the object plane ``z_object``, as ``(z_image, magnification)``.
 
+        only accurate for field systems when the gaussian plane is past the end of the optical system.
+
         Closed form, so it is exact and differentiable. A round system with image rotation
         theta maps complex (w, omega) as w' = e^{i theta} (A w + B omega), omega' =
         e^{i theta} (C w + D omega). A further drift d images when B + d D = 0.
