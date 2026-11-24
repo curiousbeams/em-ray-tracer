@@ -188,7 +188,8 @@ class Standardplots:
         step_size: float = 1e-4,
         show_fields: bool =False,
         z_end: float|None = None,
-        fname: str|None = None
+        fname: str|None = None,
+        POLC_domain: tuple[float,float]|None=None
         ) -> None:
 
         # --- setup ---
@@ -210,8 +211,8 @@ class Standardplots:
             
 
             _,axis=plt.subplots(1,N+1,sharey=True,figsize=(19.3,15),constrained_layout=True)
-            axis[0].plot(phi_space,z_space,"r--",label="Phi_splined")
-            axis[0].plot(b_space,z_space,"b--",label="B_z_splined")
+            axis[0].plot(phi_space,z_space,"r--",label="Phi")
+            axis[0].plot(b_space,z_space,"b--",label="B_z")
             axis[0].set_xlabel("normalized fields")
             axis[0].set_title("on axis fields")
             axis[0].legend()
@@ -227,7 +228,7 @@ class Standardplots:
         # --- seperate tasks across multiple cores ---
         worker=partial(_run_case,step_size=step_size,system=system,rays=rays,z_end=z_end)
         with ProcessPoolExecutor(max_workers=os.cpu_count()) as ex:
-            traces=list(ex.map(worker,range(N)))
+            traces: list[Trace,]=list(ex.map(worker,range(N)))
 
         # --- plot ---
         r_set=[]
@@ -236,8 +237,15 @@ class Standardplots:
                 axis[i+offset].set_title("paraxial")
             else : 
                 axis[i+offset].set_title(f"non paraxial order: {2*i-1}")
-            
-            axis[i+offset], r=plot_rays(trace,system=system,color="b",ax=axis[i+offset],off_axis_scale="mm",on_axis_scale=None,invert_orientation=True,max_off_axis=True)
+            if POLC_domain is not None:
+                z_POLC, r2_POLC=trace.trajectory.plane_of_least_confusion(domain=POLC_domain)
+                r_POLC= r2_POLC.item()*1e9 #mu
+                POLC=Plane(z=float(z_POLC),name=f"POLC, radius : {round(r_POLC)} $nm$")
+                system.add(POLC)
+                axis[i+offset], r = plot_rays(trace,system=system,color="b",ax=axis[i+offset],off_axis_scale="mm",on_axis_scale=None,invert_orientation=True,max_off_axis=True)
+                system.remove(f"POLC, radius : {round(r_POLC)} $nm$")
+            else:
+                axis[i+offset], r = plot_rays(trace,system=system,color="b",ax=axis[i+offset],off_axis_scale="mm",on_axis_scale=None,invert_orientation=True,max_off_axis=True)
             r_set.append(r)
         
         rmax=min(max(r_set),3*r_set[0]) 

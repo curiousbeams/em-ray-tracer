@@ -65,7 +65,7 @@ def _model(order: int,z_img=None):
     from em_ray_tracer.components.field_lenses import FieldLens
     from em_ray_tracer.rays import Rays
     from em_ray_tracer.solvers.base import SolverBase
-    from em_ray_tracer.solvers.params import SolverParams
+    from em_ray_tracer.solvers.params import IntegratorParams, SolverParams
     from em_ray_tracer.system import OpticalSystem
     from em_ray_tracer.tracer import RayTracer
 
@@ -73,7 +73,10 @@ def _model(order: int,z_img=None):
     if z_img:
         glaser.z_end_rel_cut=z_img-ZC
     system = OpticalSystem.from_components(glaser)
-    solver = SolverBase.from_params(params=SolverParams.NonParaxial(expansion_order=order))
+    if order == 0:
+        solver=SolverBase.from_params(params=SolverParams.Paraxial(integrator=IntegratorParams.RK4(dz=1e-5)))
+    else:
+        solver = SolverBase.from_params(params=SolverParams.NonParaxial(expansion_order=order))
     rays = Rays.from_cone(**CONE, voltage=VOLTAGE)
     model=RayTracer.from_models(system=system, rays=rays, solver=solver)
     return model
@@ -126,10 +129,11 @@ def test_larmor_theta_matches_direct_fit():
     found=d.abs()
     assert found < tol
 
-@pytest.mark.xfail
 def test_POLC_is_found():
+    """compares theoretical position of gaussian plane to the found position of the plane of least confusion,
+    these are per definition not equal for a non-linear lens except ofcourse for paraxial tracing"""
     ref=_theory()
-    model=_model(5)
-    plane=model.plane_of_least_confusion()
-    assert torch.testing.assert_close(plane.z,ref["z_imag"]+ZC)
+    model=_model(0)
+    z_POLC, r_POLC=model.trace(record=True).trajectory.plane_of_least_confusion(domain=(0.01,None))
+    torch.testing.assert_close(float(z_POLC),ref["z_img"])
 

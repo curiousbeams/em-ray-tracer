@@ -8,7 +8,8 @@ import torch
 
 from em_ray_tracer.components.base import ComponentBase
 from em_ray_tracer.components.thin import Plane
-from em_ray_tracer.rays import Rays
+from em_ray_tracer.constants import DTYPE
+from em_ray_tracer.rays import Rays, X, Y
 from em_ray_tracer.solvers.params import SolverParams, SolverParamsType
 from em_ray_tracer.transfer_map import TransferMap, drift_map
 
@@ -29,6 +30,7 @@ class Trajectory:
     z: torch.Tensor
     state: torch.Tensor
     alive: torch.Tensor
+    _polc: tuple[torch.Tensor,torch.Tensor] | None = None
 
     @classmethod
     def from_snapshots(cls, snapshots: list[Rays]) -> Self:
@@ -37,6 +39,51 @@ class Trajectory:
             state=torch.stack([r.state for r in snapshots]),
             alive=torch.stack([r.alive for r in snapshots]),
         )
+    
+    def plane_of_least_confusion(self,domain:tuple[float,float]|None=None):
+        if self._polc is None or domain is not None:
+            from em_ray_tracer.interpolation import b_spline
+            domain=list(domain)
+            if domain is None:
+                domain=(self.z[0],self.z[-1])
+            if domain[0] is None:
+                domain[0]=self.z[0]
+            if domain[1] is None:
+                domain[1]=self.z[-1]
+            
+            x,y,z= self.state[...,X], self.state[...,Y],self.z
+
+            dz_set=z[1:]-z[:-1]
+            asc=torch.cat([torch.tensor([True],device=dz_set.device),(dz_set > 0)])
+            dz_set=dz_set[dz_set != 0]
+            dz=torch.min(dz_set)
+            x,y,z=x[asc],y[asc],z[asc]
+
+            keep= (z > domain[0]) & (z < domain[1])
+            inner=torch.argwhere(keep)
+            keep[inner[0]-1]=True
+            keep[inner[-1]+1]=True
+            x,y,z=x[keep], y[keep],z[keep]
+
+            x_spline=b_spline(z,x,order=1,window_size=2)
+            y_spline=b_spline(z,y,order=1,window_size=2)
+            n_points=(domain[1]-domain[0])/dz + 1
+            z_domain=torch.linspace(domain[0],domain[1],int(n_points),dtype=DTYPE)
+
+            r2=torch.var(x_spline(0,z_domain),dim=-1)+torch.var(y_spline(0,z_domain),dim=-1)
+            polc_arg=torch.argmin(r2)
+
+            # extra refinement
+            z_domain2=torch.linspace(z_domain[polc_arg-1],z_domain[polc_arg+1],int(n_points),dtype=DTYPE)
+            r2=torch.var(x_spline(0,z_domain2),dim=-1)+torch.var(y_spline(0,z_domain2),dim=-1)
+            polc_arg=torch.argmin(r2)
+
+            self._polc=z_domain2[polc_arg], torch.sqrt(r2[polc_arg])
+        return self._polc
+            
+
+        
+
 
 
 @dataclass

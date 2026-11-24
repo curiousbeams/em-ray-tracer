@@ -19,7 +19,7 @@ from em_ray_tracer.optimize.params import (
     OptimizerParamsType,
     SchedulerParamsType,
 )
-from em_ray_tracer.rays import Rays, X, Y
+from em_ray_tracer.rays import Rays
 from em_ray_tracer.solvers.base import SolverBase, Trace
 from em_ray_tracer.solvers.params import SolverParams, SolverParamsType
 from em_ray_tracer.system import OpticalSystem
@@ -78,43 +78,6 @@ class RayTracer:
         """Paraxial ``(z_image, magnification)`` of the plane the rays start from."""
         return self.system.gaussian_image(self.rays.z, voltage=self.rays.voltage)
     
-    def plane_of_least_confusion(self, z_initial: float|torch.Tensor|None = None, z_tol : float = 1e-8, add_plane = False):
-        from em_ray_tracer.components.thin import Plane
-        if z_initial is None:
-            z_initial=self.gaussian_image()[0]
-
-
-        self.system.add(Plane(name="POLC", z=float(z_initial)))
-        plane=self.system["POLC"]
-        z=plane.z
-        if z.requires_grad is False:
-            z.requires_grad_(True)
-            internal_grad=True
-        else:
-            internal_grad=False
-
-        def closure():
-            state=self.trace().planes["POLC"].state
-            x=state[...,X]
-            y=state[...,Y]
-            r2=_mean_r2(x,y)
-            z.grad=torch.autograd.grad(r2,z)[0]
-            return r2
-        
-        plane_opt=torch.optim.LBFGS([z],lr=1,max_iter=50,tolerance_grad=z_tol,tolerance_change=1e-14,line_search_fn="strong_wolfe")
-        plane_opt.step(closure)
-
-        if z.grad is not None and z.grad.abs()>z_tol :
-            warnings.warn("POLC may not have converged")
-        if internal_grad:
-            z.requires_grad_(False)
-        if add_plane is False:
-            self.system.remove("POLC")
-        
-        return z.detach().clone(), plane
-
-
-
 
     def fit_aberrations(
         self,
