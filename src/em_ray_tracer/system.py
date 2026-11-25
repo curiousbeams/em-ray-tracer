@@ -2,6 +2,7 @@
 
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Any, Literal, Self
 
 import torch
@@ -25,12 +26,90 @@ class Gap:
 
 @dataclass(frozen=True)
 class Element:
-    """A component, spanning ``component.z_start`` to ``component.z_end``."""
+    """A component crossed as one action: a thin component, one kick of a split
+    ``DoubleDeflector``, or an extended map component that nothing overlaps."""
 
     component: ComponentBase
 
 
-Segment = Gap | Element
+@dataclass(frozen=True, eq=False)
+class FieldSpan:
+    """``z0`` to ``z1``, crossed by integrating the superposition of ``components``.
+
+    Every field component whose extent covers the interval contributes, in the lab frame:
+
+    - B adds linearly, B(z) = sum_c B_c(z - z_c), and so does each of its derivatives;
+    - phi adds linearly too. Each profile is the potential relative to ground and vanishes
+      outside its extent, so the beam potential is V + sum_c phi_c(z - z_c). Everything
+      nonlinear in phi (gamma, phi_hat, the paraxial coefficients) is computed from the sum,
+      never summed per component;
+    - the off-axis (Laplace) expansion is linear in the axial profile, so expanding the summed
+      derivatives is exact.
+
+    Superposing profiles computed separately assumes the sources don't interact: no saturated
+    iron shared between pole pieces, no electrode that changes another lens's potential.
+    """
+
+    z0: torch.Tensor
+    z1: torch.Tensor
+    components: tuple[ComponentBase, ...]
+
+    @classmethod
+    def of(cls, component: ComponentBase) -> Self:
+        """The span of one field component on its own, over its whole extent."""
+        return cls(component.z_start, component.z_end, (component,))
+
+    def axial_derivative(self, n: int, z: torch.Tensor) -> dict[str, torch.Tensor]:
+        """The n-th derivative of the summed axial profiles at the lab position ``z``."""
+        total: dict[str, torch.Tensor] = {}
+        for c in self.components:
+            for kind, value in c.axial_derivative(n, z).items():
+                total[kind] = value if kind not in total else total[kind] + value
+        return total
+
+    # the AxialField interface, in lab z, so a LaplaceExpansion can expand the summed profiles
+    derivative = axial_derivative
+
+    @cached_property
+    def kinds(self) -> tuple[str, ...]:
+        """The field kinds present ("magnetic", "electrostatic"), from one probe in the span."""
+        middle = ((self.z0 + self.z1) / 2).detach().reshape(1)
+        return tuple(self.axial_derivative(0, middle))
+
+    @property
+    def whole(self) -> ComponentBase | None:
+        """The component, if the span is one component over its whole extent; else ``None``."""
+        if len(self.components) != 1:
+            return None
+        (c,) = self.components
+        if abs(_value(self.z0) - _value(c.z_start)) > _TOL:
+            return None
+        if abs(_value(self.z1) - _value(c.z_end)) > _TOL:
+            return None
+        return c
+
+    def transfer_map(
+        self, order: int = 1, voltage: float | None = None, r_interest: float | None = None
+    ) -> TransferMap:
+        """The span's map. A whole component keeps its own (misalignment included); a partial
+        or superposed span is mapped by tracing the principal rays through it."""
+        if (c := self.whole) is not None:
+            return c.transfer_map(order=order, voltage=voltage, r_interest=r_interest)
+        if any(c.is_misaligned for c in self.components):
+            raise NotImplementedError(
+                f"Superposed or clipped field components must be aligned: "
+                f"{[c.name for c in self.components]}"
+            )
+        from em_ray_tracer.solvers.ode import span_transfer_map
+
+        return span_transfer_map(self, order=order, voltage=voltage, r_interest=r_interest)
+
+
+Segment = Gap | Element | FieldSpan
+
+
+def _value(z: torch.Tensor | float) -> float:
+    return float(z.detach()) if isinstance(z, torch.Tensor) else float(z)
 
 
 class OpticalSystem(nn.Module, OptimizerMixin):
@@ -133,37 +212,95 @@ class OpticalSystem(nn.Module, OptimizerMixin):
     ) -> list[Segment]:
         """The schedule from ``z_start`` to ``z_end`` (default: the last component).
 
-        Components wholly outside the span are skipped. Gaps are always emitted, even at zero
-        length, so gradients reach every position. Overlapping extended components raise:
-        superposing overlapping fields is not implemented yet.
+        A sweep over breakpoints: the span's ends, every field component's start and end, and
+        every thin action. Between consecutive breakpoints the space is a :class:`Gap` if no
+        field covers it and a :class:`FieldSpan` of the fields that do. Each thin action is an
+        :class:`Element` at its own z. So fields superpose, and thin components (apertures,
+        planes, the two kicks of a ``DoubleDeflector``) can sit inside fields.
+
+        - Breakpoints are the components' own tensors, and segments are emitted even at zero
+          length, so gradients reach every position.
+        - A field that reaches past either end of the span is clipped to it, so rays can start
+          or stop inside a field.
+        - An extended component that can't be split (``thin_parts()`` is ``None``) is crossed
+          whole; anything inside it, or a span that cuts it, raises.
+        - Thin components outside the span are skipped.
         """
         z_start = torch.as_tensor(z_start, dtype=torch.float64)
         z_end = self.z_last if z_end is None else torch.as_tensor(z_end, dtype=torch.float64)
-        lo, hi = float(z_start.detach()), float(z_end.detach())
+        lo, hi = _value(z_start), _value(z_end)
+
+        # (value, tensor, kind, payload); sorted by value, ties keep insertion order
+        marks: list[tuple[float, torch.Tensor, str, Any]] = []
+        active: list[ComponentBase] = []  # fields that start before the span
+        for c in self.ordered():
+            c0, c1 = _value(c.z_start), _value(c.z_end)
+            if c1 < lo - _TOL or c0 > hi + _TOL:
+                continue
+            if c.is_field:
+                if c1 <= lo + _TOL or c0 >= hi - _TOL:
+                    continue  # touches the span at one end only
+                if c0 < lo - _TOL:
+                    active.append(c)
+                else:
+                    marks.append((c0, c.z_start, "on", c))
+                if c1 <= hi + _TOL:
+                    marks.append((c1, c.z_end, "off", c))
+                continue
+            parts = c.thin_parts()
+            if parts is None:
+                if c0 < lo - _TOL or c1 > hi + _TOL:
+                    raise ValueError(
+                        f"{c.name} [{c0}, {c1}] straddles the span [{lo}, {hi}]; an extended "
+                        "component that can't be split must lie wholly inside it"
+                    )
+                marks.append((c0, c.z_start, "whole", c))
+                marks.append((c1, c.z_end, "whole_end", c))
+                continue
+            for part in parts:
+                pz = _value(part.z_start)
+                if lo - _TOL <= pz <= hi + _TOL:
+                    marks.append((pz, part.z_start, "thin", part))
+        marks.sort(key=lambda m: m[0])
 
         segments: list[Segment] = []
         cursor = z_start
-        for c in self.ordered():
-            c0, c1 = float(c.z_start.detach()), float(c.z_end.detach())
-            if c1 < lo - _TOL or c0 > hi + _TOL:
-                continue
-            if c0 < lo - _TOL or c1 > hi + _TOL:
-                raise ValueError(f"{c.name} [{c0}, {c1}] straddles the span [{lo}, {hi}],\n",
-                                 "if intentional, change the start/end values of the straddled component")
-            if c0 < float(cursor.detach()) - _TOL:
-                raise ValueError(
-                    f"{c.name} starts at {c0}, inside the previous component (ends at "
-                    f"{float(cursor.detach())}). Overlapping fields are not supported yet."
-                )
-            segments.append(Gap(cursor, c.z_start))
-            segments.append(Element(c))
-            cursor = c.z_end
-        segments.append(Gap(cursor, z_end))
+        inside: ComponentBase | None = None  # an unsplittable component being crossed
+        for value, z, kind, payload in [*marks, (hi, z_end, "end", None)]:
+            if inside is not None:
+                if kind == "whole_end" and payload is inside:
+                    cursor, inside = z, None
+                    continue
+                if value < _value(inside.z_end) - _TOL or kind in ("on", "off"):
+                    name = getattr(payload, "name", "the end of the span")
+                    raise ValueError(
+                        f"{name} at {value} lies inside {inside.name} "
+                        f"[{_value(inside.z_start)}, {_value(inside.z_end)}]. Overlapping "
+                        "an extended component that can't be split is not supported."
+                    )
+            segments.append(FieldSpan(cursor, z, tuple(active)) if active else Gap(cursor, z))
+            cursor = z
+            match kind:
+                case "on":
+                    active.append(payload)
+                case "off":
+                    active.remove(payload)
+                case "thin":
+                    segments.append(Element(payload))
+                case "whole":
+                    if active:
+                        raise ValueError(
+                            f"{payload.name} lies inside the field of "
+                            f"{[f.name for f in active]}. Overlapping an extended component "
+                            "that can't be split is not supported."
+                        )
+                    segments.append(Element(payload))
+                    inside = payload
         return segments
 
     # endregion --- geometry ---
 
-    def forward(self, rays, solver=None, z_end=None, record: bool|Literal["light"] = False):
+    def forward(self, rays, solver=None, z_end=None, record: bool | Literal["light"] = False):
         """Trace ``rays`` (default solver: first-order transfer matrices) and return the
         ``Trace``. This makes the system usable with ``torch.func`` (``functional_call``,
         ``vmap``, ``jacrev``) as a function of its parameters."""
@@ -180,8 +317,8 @@ class OpticalSystem(nn.Module, OptimizerMixin):
         z_start: torch.Tensor | float,
         z_end: torch.Tensor | float | None = None,
         order: int = 1,
-        voltage: float | None = None, 
-        r_interest : float | None = None
+        voltage: float | None = None,
+        r_interest: float | None = None,
     ) -> TransferMap:
         """The composed map from ``z_start`` to ``z_end``. Every component must have one."""
         total = None
@@ -190,9 +327,11 @@ class OpticalSystem(nn.Module, OptimizerMixin):
                 case Gap(z0, z1):
                     m = drift_map(z1 - z0)
                 case Element(c):
-                    m = c.transfer_map(order=order, voltage=voltage,r_interest=r_interest)
+                    m = c.transfer_map(order=order, voltage=voltage, r_interest=r_interest)
                     if m is None:
                         raise ValueError(f"{c.name} is not a polynomial map; trace rays instead")
+                case FieldSpan():
+                    m = seg.transfer_map(order=order, voltage=voltage, r_interest=r_interest)
             total = m if total is None else m @ total
         return total
 
@@ -219,7 +358,7 @@ class OpticalSystem(nn.Module, OptimizerMixin):
     def focal_length(self, voltage: float | None = None, **kwargs) -> torch.Tensor:
         """Complex image-side focal length -1 / (e^{i theta} C). Unchanged by drifts before
         or after. Its modulus is |f| and its argument is the image rotation (mod pi).
-        
+
         parameters
         ---------------
         order : int , default 1
@@ -230,7 +369,7 @@ class OpticalSystem(nn.Module, OptimizerMixin):
             specifies the scale at which the transfermap is most accurate for non-linear components
         """
         first = min(float(c.z_start.detach()) for c in self.components.values())
-        _, _, C, _ = self._complex_blocks(self.transfer_map(first, voltage=voltage,**kwargs))
+        _, _, C, _ = self._complex_blocks(self.transfer_map(first, voltage=voltage, **kwargs))
         return -1.0 / C
 
     @staticmethod
@@ -245,39 +384,35 @@ class OpticalSystem(nn.Module, OptimizerMixin):
 
     #  region --- fields ---
 
-    def fields(self,z_start : torch.Tensor | float, z_end : torch.Tensor | float):
-        from em_ray_tracer.components.field_lenses import FieldComponent
-        phi_space=[]
-        b_space=[]
-        z_space=[]
-        for seg in self.segments(z_start=z_start,z_end=z_end):
+    def fields(self, z_start: torch.Tensor | float, z_end: torch.Tensor | float):
+        """The superposed axial fields from ``z_start`` to ``z_end``, as ``(z, phi, B)``.
+
+        Field spans are sampled at 1000 points each and hold the summed profiles; gaps and thin
+        components contribute zeros at their ends.
+        """
+        phi_space = []
+        b_space = []
+        z_space = []
+        for seg in self.segments(z_start=z_start, z_end=z_end):
             match seg:
-                case Gap(z0,z1):
-                    z_space.append(torch.stack([z0,z1]).to(DTYPE))
-                    phi_space.append(torch.zeros(2,dtype=DTYPE))
-                    b_space.append(torch.zeros(2,dtype=DTYPE))
+                case Gap(z0, z1):
+                    z_space.append(torch.stack([z0, z1]).to(DTYPE))
+                    phi_space.append(torch.zeros(2, dtype=DTYPE))
+                    b_space.append(torch.zeros(2, dtype=DTYPE))
                 case Element(c):
-                    if not isinstance(c,FieldComponent):
-                        z_space.append(torch.stack([c.z_start,c.z_end]).to(DTYPE))
-                        phi_space.append(torch.zeros(2,dtype=DTYPE))
-                        b_space.append(torch.zeros(2,dtype=DTYPE))
-                        continue
-                    z_local=torch.linspace(c.z_start,c.z_end,1000,dtype=DTYPE)
-
-                    deriv=c.axial_derivative(0,z_local)
-                    phi_elem=deriv.get("electrostatic")
-                    b_elem=deriv.get("magnetic")
-
-                    if phi_elem is None:
-                        phi_elem=torch.zeros_like(z_local)
-                    if b_elem is None:
-                        b_elem=torch.zeros_like(z_local)
+                    z_space.append(torch.stack([c.z_start, c.z_end]).to(DTYPE))
+                    phi_space.append(torch.zeros(2, dtype=DTYPE))
+                    b_space.append(torch.zeros(2, dtype=DTYPE))
+                case FieldSpan(z0, z1):
+                    z_local = torch.linspace(z0, z1, 1000, dtype=DTYPE)
+                    deriv = seg.axial_derivative(0, z_local)
+                    zeros = torch.zeros_like(z_local)
                     z_space.append(z_local)
-                    phi_space.append(phi_elem)
-                    b_space.append(b_elem)
-        z_space=torch.cat(z_space)
-        phi_space=torch.cat(phi_space)
-        b_space=torch.cat(b_space)
+                    phi_space.append(deriv.get("electrostatic", zeros))
+                    b_space.append(deriv.get("magnetic", zeros))
+        z_space = torch.cat(z_space)
+        phi_space = torch.cat(phi_space)
+        b_space = torch.cat(b_space)
         return z_space, phi_space, b_space
 
     # endregion --- fields ---

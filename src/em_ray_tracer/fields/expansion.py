@@ -31,31 +31,29 @@ with coefficients ``const_k * d^(m_k)/dz^(m_k)`` of the axial profile, so they a
 from __future__ import annotations
 
 from math import factorial
-from typing import TYPE_CHECKING, NamedTuple
+from typing import NamedTuple
 
 import torch
 
 from em_ray_tracer.constants import DTYPE
 from em_ray_tracer.fields.base import AxialField, Field3D
 
-if TYPE_CHECKING:
-    from em_ray_tracer.components.field_lenses import FieldComponent
-
 
 def _c_axial(k: int) -> float:
     return (-0.25) ** k / factorial(k) ** 2
 
-def _c_trans(k: int) -> float:          # includes the -1/2 prefactor
+
+def _c_trans(k: int) -> float:  # includes the -1/2 prefactor
     return -0.5 * (-0.25) ** k / (factorial(k) * factorial(k + 1))
 
 
 class _Plan(NamedTuple):
-    names: tuple            # series evaluated, in row order of the fused Horner result
-    K: int                  # max number of terms over those series (rows of the coefficient tensor)
-    orders: tuple           # distinct derivative orders -> one axial.derivative call each
-    kinds_at: dict          # order -> kinds ("magnetic"/"electrostatic") read from that call
-    idx: torch.Tensor       # (K, S) long: which derivative value feeds coefficient (k, s)
-    cmat: torch.Tensor      # (K, S): constant of coefficient (k, s), 0 for padding
+    names: tuple  # series evaluated, in row order of the fused Horner result
+    K: int  # max number of terms over those series (rows of the coefficient tensor)
+    orders: tuple  # distinct derivative orders -> one axial.derivative call each
+    kinds_at: dict  # order -> kinds ("magnetic"/"electrostatic") read from that call
+    idx: torch.Tensor  # (K, S) long: which derivative value feeds coefficient (k, s)
+    cmat: torch.Tensor  # (K, S): constant of coefficient (k, s), 0 for padding
 
 
 class LaplaceExpansion(Field3D):
@@ -73,22 +71,18 @@ class LaplaceExpansion(Field3D):
 
     # series -> (axial kind it is built from, derivative order of term k, constant of term k)
     _SERIES = {
-        "Bz":   ("magnetic",      lambda k: 2 * k,     _c_axial),
-        "Bt":   ("magnetic",      lambda k: 2 * k + 1, _c_trans),
+        "Bz": ("magnetic", lambda k: 2 * k, _c_axial),
+        "Bt": ("magnetic", lambda k: 2 * k + 1, _c_trans),
         "phiz": ("electrostatic", lambda k: 2 * k + 1, _c_axial),
         "phit": ("electrostatic", lambda k: 2 * k + 2, _c_trans),
-        "phi":  ("electrostatic", lambda k: 2 * k,     _c_axial),
+        "phi": ("electrostatic", lambda k: 2 * k, _c_axial),
     }
 
-    def __init__(self, axial: AxialField,
-                 order: int = 3,
-                 longitudinal_order: int | None = None,
-                 component: FieldComponent | None = None):
+    def __init__(self, axial: AxialField, order: int = 3, longitudinal_order: int | None = None):
         super().__init__()
         self.axial: AxialField = axial
         self.order = order
         self.longitudinal_order = order if longitudinal_order is None else longitudinal_order
-        self.component = component
         self.z_grid = None
         self.coeff_grid = None
         self.misses = 0
@@ -97,31 +91,38 @@ class LaplaceExpansion(Field3D):
 
     # ------------------------------------------------------------------ plan
     def _present_kinds(self) -> tuple:
-        """Which of the two fields the axial profile provides (one probe call, order 0)."""
-        probe = self.axial.derivative(0, torch.zeros(1, dtype=DTYPE))
-        kinds = tuple(k for k in self._KIND_SERIES if probe.get(k) is not None)
+        """Which of the two fields the axial profile provides: its ``kinds`` if it has them
+        (a ``FieldSpan`` does), else one probe call at z = 0, order 0."""
+        present = getattr(self.axial, "kinds", None)
+        if present is None:
+            probe = self.axial.derivative(0, torch.zeros(1, dtype=DTYPE))
+            present = tuple(k for k, v in probe.items() if v is not None)
+        kinds = tuple(k for k in self._KIND_SERIES if k in present)
         if not kinds:
             raise ValueError("axial.derivative returned neither 'magnetic' nor 'electrostatic'")
         return kinds
 
     def _build_plan(self) -> _Plan:
         N, L = self.order, self.longitudinal_order
-        counts = {                                   # number of terms of each series
-            "Bz":   L // 2 + 1,
-            "Bt":   max(0, (N - 1) // 2 + 1),
+        counts = {  # number of terms of each series
+            "Bz": L // 2 + 1,
+            "Bt": max(0, (N - 1) // 2 + 1),
             "phiz": (L + 2) // 2,
             "phit": max(0, (N + 1) // 2),
-            "phi":  (N + 1) // 2 + 1,
+            "phi": (N + 1) // 2 + 1,
         }
         names = tuple(nm for kd in self._present_kinds() for nm in self._KIND_SERIES[kd])
         S, K = len(names), max(counts[nm] for nm in names)
 
-        used = {(self._SERIES[nm][0], self._SERIES[nm][1](k))
-                for nm in names for k in range(counts[nm])}
-        sources = sorted(used, key=lambda t: (t[1], t[0]))      # (kind, order), by order
+        used = {
+            (self._SERIES[nm][0], self._SERIES[nm][1](k))
+            for nm in names
+            for k in range(counts[nm])
+        }
+        sources = sorted(used, key=lambda t: (t[1], t[0]))  # (kind, order), by order
         pos = {key: i for i, key in enumerate(sources)}
 
-        idx = torch.full((K, S), len(sources), dtype=torch.long)   # len(sources) -> the zero pad
+        idx = torch.full((K, S), len(sources), dtype=torch.long)  # len(sources) -> the zero pad
         cmat = torch.zeros(K, S, dtype=DTYPE)
         for s, nm in enumerate(names):
             skind, order_of, c = self._SERIES[nm]
@@ -137,7 +138,7 @@ class LaplaceExpansion(Field3D):
         key = (self.order, self.longitudinal_order)
         if self._plan_cache is None or self._plan_cache[0] != key:
             self._plan_cache = (key, self._build_plan())
-            self._precalc = False          # grid belongs to the old plan: call pre_calc again
+            self._precalc = False  # grid belongs to the old plan: call pre_calc again
         return self._plan_cache[1]
 
     # ---------------------------------------------------------- coefficients
@@ -145,22 +146,22 @@ class LaplaceExpansion(Field3D):
         """Coefficient tensor at z: (K, S, 1) for 0-d z, (G, K, S, 1) for z of shape (G,)."""
         p = self._plan()
         vals = []
-        for n in p.orders:                         # one derivative call per distinct order
+        for n in p.orders:  # one derivative call per distinct order
             d = self.axial.derivative(n, z)
             vals.extend(d[kd] for kd in p.kinds_at[n])
-        vals.append(torch.zeros_like(vals[0]))     # padding entry (constant is 0 there)
-        V = torch.stack(vals)                      # (M+1, *z.shape)
+        vals.append(torch.zeros_like(vals[0]))  # padding entry (constant is 0 there)
+        V = torch.stack(vals)  # (M+1, *z.shape)
         extra = (1,) * (V.dim() - 1)
         cm = p.cmat.to(dtype=V.dtype, device=V.device)
-        coef = V[p.idx.to(V.device)] * cm.reshape(*cm.shape, *extra)   # (K, S, *z.shape)
+        coef = V[p.idx.to(V.device)] * cm.reshape(*cm.shape, *extra)  # (K, S, *z.shape)
         if coef.dim() > 2:
-            coef = coef.movedim(2, 0)              # (G, K, S)
+            coef = coef.movedim(2, 0)  # (G, K, S)
         return coef.unsqueeze(-1)
 
     def _grid_index(self, z):
         raw = (float(z) - self.z0) / self.z_step
         i = round(raw)
-        if abs(raw - i) > 1e-8 or not (0 <= i < self._G):   # < not <=
+        if abs(raw - i) > 1e-8 or not (0 <= i < self._G):  # < not <=
             return None
         return i
 
@@ -174,19 +175,24 @@ class LaplaceExpansion(Field3D):
         zv = torch.as_tensor(z, dtype=DTYPE).reshape(1)
         return self._coefficients(zv)[0].unbind(0)
 
-    def pre_calc(self, n_steps: int):
-        if self.component is None:
-            raise ValueError("please supply component in order to use precalc")
-        z0 = float(self.component.z_start - self.component.z)
-        z1 = float(self.component.z_end - self.component.z)
-        z_space = torch.linspace(z0, z1, 2 * n_steps + 1, dtype=DTYPE)
+    def pre_calc(self, z0: torch.Tensor | float, z1: torch.Tensor | float, n_steps: int):
+        """Tabulate the coefficients on the RK4 half-step grid z0 + k h/2, k = 0 .. 2 n_steps,
+        with h = (z1 - z0) / n_steps, in the axial field's own coordinate.
 
-        coef = self._coefficients(z_space)         # (G, K, S, 1), part of the graph
+        The grid is built from the endpoint tensors, so the table keeps its graph to them: a
+        plane that ends a span inside a field moves the grid, and its gradient sees that.
+        """
+        z0 = torch.as_tensor(z0, dtype=DTYPE)
+        z1 = torch.as_tensor(z1, dtype=DTYPE)
+        half = (z1 - z0) / (2 * n_steps)
+        z_space = z0 + half * torch.arange(2 * n_steps + 1, dtype=DTYPE)
+
+        coef = self._coefficients(z_space)  # (G, K, S, 1), part of the graph
         self.coeff_grid = coef
         # Python-side split once: no select/unbind autograd ops in the hot path
         # (a select on the big tensor costs an O(G) zero-fill in backward per call).
         self._grid_a = tuple(row.unbind(0) for row in coef.unbind(0))
-        self.z0, self.z_step, self.z_grid = z0, (z1 - z0) / (2 * n_steps), z_space
+        self.z0, self.z_step, self.z_grid = float(z0.detach()), float(half.detach()), z_space
         self._G = len(z_space)
         self.misses = 0
         self._precalc = True
@@ -206,7 +212,6 @@ class LaplaceExpansion(Field3D):
     def evaluate(
         self, x: torch.Tensor, y: torch.Tensor, z: torch.Tensor, voltage: float | None = None
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
-
         p = self._plan()
         u = torch.addcmul(x * x, y, y)
         s = dict(zip(p.names, self._horner(self._coeffs(z), u).unbind(0)))

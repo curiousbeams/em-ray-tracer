@@ -41,6 +41,8 @@ class ComponentBase(nn.Module, ABC):
 
     #: Names of constructor arguments (beyond z/name/shift/tilt) that ``config()`` records.
     config_fields: ClassVar[tuple[str, ...]] = ()
+    #: Field components are integrated (and superposed) over their extent, not applied as maps.
+    is_field: ClassVar[bool] = False
     _registry: ClassVar[dict[str, type["ComponentBase"]]] = {}
 
     def __init_subclass__(cls, **kwargs):
@@ -74,6 +76,18 @@ class ComponentBase(nn.Module, ABC):
     @property
     def length(self) -> torch.Tensor:
         return self.z_end - self.z_start
+
+    def thin_parts(self) -> list | None:
+        """The thin actions this component is made of, each placed at its own ``z_start``.
+
+        The schedule (``OpticalSystem.segments``) interleaves them with gaps and field spans,
+        so they can sit inside fields. A zero-length component is its own single part. An
+        extended component returns ``None`` unless it can be split: it is then crossed whole,
+        and nothing may overlap it.
+        """
+        if float((self.z_end - self.z_start).detach()) == 0.0:
+            return [self]
+        return None
 
     # endregion --- geometry ---
 
@@ -113,9 +127,11 @@ class ComponentBase(nn.Module, ABC):
         """The map across the element in its own aligned frame, or ``None`` if the element
         is not a polynomial map of the ray state (e.g. a biprism)."""
 
-    def transfer_map(self, order: int = 1, voltage: float | None = None, r_interest: float | None = None) -> TransferMap | None:
+    def transfer_map(
+        self, order: int = 1, voltage: float | None = None, r_interest: float | None = None
+    ) -> TransferMap | None:
         """The map in the lab frame: :meth:`local_transfer_map` conjugated by misalignment."""
-        self.r_interest=r_interest
+        self.r_interest = r_interest
         local = self.local_transfer_map(order=order, voltage=voltage)
         if local is None or not self.is_misaligned:
             return local
@@ -135,7 +151,7 @@ class ComponentBase(nn.Module, ABC):
 
     def apply(self, rays: Rays, order: int = 1, r_interest: float | None = None) -> Rays:
         """Propagate ``rays`` from ``z_start`` to ``z_end`` through this element."""
-        m = self.transfer_map(order=order, voltage=rays.voltage,r_interest=r_interest)
+        m = self.transfer_map(order=order, voltage=rays.voltage, r_interest=r_interest)
         if m is None:
             raise NotImplementedError(f"{type(self).__name__} must implement apply()")
         return rays.replace(state=m.apply(rays.state), z=self.z_end)

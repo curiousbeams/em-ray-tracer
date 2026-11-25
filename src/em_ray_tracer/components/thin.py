@@ -120,9 +120,14 @@ class DoubleDeflector(ComponentBase):
     measured excitations with :meth:`from_excitations`.
 
     An extended element: it occupies [z, z_2]. The ``pivot`` is usually below it (e.g. the
-    specimen plane). The pivot condition assumes the space from ``z_2`` to the pivot is
+    specimen plane). The pivot condition assumes the space from ``z`` to the pivot is
     field-free, and it holds for the reference energy: an off-energy ray is deflected by
     a (1 + k delta), as for a single deflector.
+
+    The schedule splits it into its two thin kicks (:meth:`thin_parts`), so the coils can sit
+    inside a lens field or around other components. The kicks are then the two excitations
+    above, applied where the coils are; ``tilt`` and ``beam_shift`` keep their meaning at the
+    pivot only when nothing else acts between the first coil and the pivot.
     """
 
     config_fields = ("tilt", "beam_shift", "pivot", "z_2", "kind")
@@ -187,6 +192,54 @@ class DoubleDeflector(ComponentBase):
         second = deflection_map(a2[0], a2[1], dispersion=k)
         return second @ drift_map(self.z_2 - self.z) @ first
 
+    def thin_parts(self) -> list["_Kick"]:
+        """The two coils as thin kicks at ``z`` and ``z_2``.
+
+        Splitting is exact, misalignment included: a constant kick is unchanged by the shift
+        and tilt conjugation, and the drift between the coils is a straight line in any frame.
+        """
+        return [_Kick(self, 0), _Kick(self, 1)]
+
+
+class _Kick:
+    """One coil of a :class:`DoubleDeflector`, as a thin deflector for the schedule.
+
+    It reads the parent's excitations when it acts, so gradients reach ``tilt`` and
+    ``beam_shift``. It is not an ``nn.Module``: holding the parent must not register the
+    parent as a child of its own part.
+    """
+
+    is_field = False
+
+    def __init__(self, parent: DoubleDeflector, index: int):
+        self.parent = parent
+        self.index = index
+
+    @property
+    def name(self) -> str:
+        return f"{self.parent.name}[{self.index + 1}]"
+
+    @property
+    def z(self) -> torch.Tensor:
+        return self.parent.z if self.index == 0 else self.parent.z_2
+
+    z_start = z_end = z
+
+    def thin_parts(self) -> list["_Kick"]:
+        return [self]
+
+    def transfer_map(self, order: int = 1, voltage: float | None = None, **kwargs) -> TransferMap:
+        k = dispersion_coefficient(self.parent.kind, voltage)
+        a = self.parent.excitations[self.index]
+        return deflection_map(a[0], a[1], dispersion=k)
+
+    def apply(self, rays: Rays, order: int = 1, **kwargs) -> Rays:
+        m = self.transfer_map(order=order, voltage=rays.voltage)
+        return rays.replace(state=m.apply(rays.state), z=self.z_end)
+
+    def __repr__(self) -> str:
+        return f"_Kick({self.name}, z={float(self.z.detach())})"
+
 
 class Biprism(ComponentBase):
     """Electrostatic biprism: a wire that kicks rays by ``deflection`` toward it (for a
@@ -216,7 +269,7 @@ class Biprism(ComponentBase):
     def local_transfer_map(self, order: int = 1, voltage: float | None = None) -> None:
         return None
 
-    def apply(self, rays: Rays,**kwargs) -> Rays:
+    def apply(self, rays: Rays, **kwargs) -> Rays:
         # u: coordinate perpendicular to the wire, measured from the (possibly shifted) wire
         c, s = torch.cos(self.orientation), torch.sin(self.orientation)
         u = (rays.x - self.shift[0]) * c + (rays.y - self.shift[1]) * s
@@ -266,10 +319,12 @@ class Aperture(ComponentBase):
         t = ((outer2 - r2) / band).clamp(0, 1)
         return t * t * (3 - 2 * t)
 
-    def local_transfer_map(self, order: int = 1, voltage: float | None = None,r : float | None = None) -> TransferMap:
+    def local_transfer_map(
+        self, order: int = 1, voltage: float | None = None, r: float | None = None
+    ) -> TransferMap:
         return TransferMap.identity(dtype=self.z.dtype, device=self.z.device)
 
-    def apply(self, rays: Rays,**kwargs) -> Rays:
+    def apply(self, rays: Rays, **kwargs) -> Rays:
         t = self.transmission(rays)
         alive = rays.alive & (t > 0)
         if self.edge_width == 0:

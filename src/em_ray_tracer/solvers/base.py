@@ -14,7 +14,7 @@ from em_ray_tracer.solvers.params import SolverParams, SolverParamsType
 from em_ray_tracer.transfer_map import TransferMap, drift_map
 
 if TYPE_CHECKING:
-    from em_ray_tracer.system import OpticalSystem
+    from em_ray_tracer.system import FieldSpan, OpticalSystem
 
 
 @dataclass
@@ -30,7 +30,7 @@ class Trajectory:
     z: torch.Tensor
     state: torch.Tensor
     alive: torch.Tensor
-    _polc: tuple[torch.Tensor,torch.Tensor] | None = None
+    _polc: tuple[torch.Tensor, torch.Tensor] | None = None
 
     @classmethod
     def from_snapshots(cls, snapshots: list[Rays]) -> Self:
@@ -39,51 +39,54 @@ class Trajectory:
             state=torch.stack([r.state for r in snapshots]),
             alive=torch.stack([r.alive for r in snapshots]),
         )
-    
-    def plane_of_least_confusion(self,domain:tuple[float,float]|None=None):
+
+    def plane_of_least_confusion(self, domain: tuple[float, float] | None = None):
         if self._polc is None or domain is not None:
             from em_ray_tracer.interpolation import b_spline
-            domain=list(domain)
+
+            domain = list(domain)
             if domain is None:
-                domain=(self.z[0],self.z[-1])
+                domain = (self.z[0], self.z[-1])
             if domain[0] is None:
-                domain[0]=self.z[0]
+                domain[0] = self.z[0]
             if domain[1] is None:
-                domain[1]=self.z[-1]
-            
-            x,y,z= self.state[...,X], self.state[...,Y],self.z
+                domain[1] = self.z[-1]
 
-            dz_set=z[1:]-z[:-1]
-            asc=torch.cat([torch.tensor([True],device=dz_set.device),(dz_set > 0)])
-            dz_set=dz_set[dz_set != 0]
-            dz=torch.min(dz_set)
-            x,y,z=x[asc],y[asc],z[asc]
+            x, y, z = self.state[..., X], self.state[..., Y], self.z
 
-            keep= (z > domain[0]) & (z < domain[1])
-            inner=torch.argwhere(keep)
-            keep[inner[0]-1]=True
-            keep[inner[-1]+1]=True
-            x,y,z=x[keep], y[keep],z[keep]
+            dz_set = z[1:] - z[:-1]
+            asc = torch.cat([torch.tensor([True], device=dz_set.device), (dz_set > 0)])
+            dz_set = dz_set[dz_set != 0]
+            dz = torch.min(dz_set)
+            x, y, z = x[asc], y[asc], z[asc]
 
-            x_spline=b_spline(z,x,order=1,window_size=2)
-            y_spline=b_spline(z,y,order=1,window_size=2)
-            n_points=(domain[1]-domain[0])/dz + 1
-            z_domain=torch.linspace(domain[0],domain[1],int(n_points),dtype=DTYPE)
+            keep = (z > domain[0]) & (z < domain[1])
+            inner = torch.argwhere(keep)
+            keep[inner[0] - 1] = True
+            keep[inner[-1] + 1] = True
+            x, y, z = x[keep], y[keep], z[keep]
 
-            r2=torch.var(x_spline(0,z_domain),dim=-1)+torch.var(y_spline(0,z_domain),dim=-1)
-            polc_arg=torch.argmin(r2)
+            x_spline = b_spline(z, x, order=1, window_size=2)
+            y_spline = b_spline(z, y, order=1, window_size=2)
+            n_points = (domain[1] - domain[0]) / dz + 1
+            z_domain = torch.linspace(domain[0], domain[1], int(n_points), dtype=DTYPE)
+
+            r2 = torch.var(x_spline(0, z_domain), dim=-1) + torch.var(
+                y_spline(0, z_domain), dim=-1
+            )
+            polc_arg = torch.argmin(r2)
 
             # extra refinement
-            z_domain2=torch.linspace(z_domain[polc_arg-1],z_domain[polc_arg+1],int(n_points),dtype=DTYPE)
-            r2=torch.var(x_spline(0,z_domain2),dim=-1)+torch.var(y_spline(0,z_domain2),dim=-1)
-            polc_arg=torch.argmin(r2)
+            z_domain2 = torch.linspace(
+                z_domain[polc_arg - 1], z_domain[polc_arg + 1], int(n_points), dtype=DTYPE
+            )
+            r2 = torch.var(x_spline(0, z_domain2), dim=-1) + torch.var(
+                y_spline(0, z_domain2), dim=-1
+            )
+            polc_arg = torch.argmin(r2)
 
-            self._polc=z_domain2[polc_arg], torch.sqrt(r2[polc_arg])
+            self._polc = z_domain2[polc_arg], torch.sqrt(r2[polc_arg])
         return self._polc
-            
-
-        
-
 
 
 @dataclass
@@ -155,9 +158,18 @@ class SolverBase(ABC):
                 raise TypeError(f"Unknown solver params {params!r}")
 
     @abstractmethod
-    def propagate(self, component: ComponentBase, rays: Rays, snapshots: list[Rays]|None = None ) -> tuple[Rays, TransferMap | None, list[Rays]|None]:
+    def propagate(
+        self, component: ComponentBase, rays: Rays, snapshots: list[Rays] | None = None
+    ) -> tuple[Rays, TransferMap | None, list[Rays] | None]:
         """Cross ``component``; return the rays at its exit and its map (``None`` if it has
         none)."""
+
+    @abstractmethod
+    def cross(
+        self, span: "FieldSpan", rays: Rays, snapshots: list[Rays] | None = None
+    ) -> tuple[Rays, TransferMap | None, list[Rays] | None]:
+        """Cross ``span``, the superposed fields of one or more field components; return the
+        rays at ``span.z1`` and the span's map (``None`` if the solver makes none)."""
 
     def trace(
         self,
@@ -165,11 +177,11 @@ class SolverBase(ABC):
         rays: Rays,
         *,
         z_end: torch.Tensor | float | None = None,
-        record: bool | Literal["light"] = False
-) -> Trace:
+        record: bool | Literal["light"] = False,
+    ) -> Trace:
         """Trace ``rays`` from ``rays.z`` to ``z_end`` (default: the last component).
         Use record = "light" if you only want the edges of elements tracked"""
-        from em_ray_tracer.system import Element, Gap
+        from em_ray_tracer.system import Element, FieldSpan, Gap
 
         current = rays
         snapshots = [rays] if record else []
@@ -185,19 +197,28 @@ class SolverBase(ABC):
                         snapshots.append(current)
                 case Element(component):
                     if record is True:
-                        current, m , snapshots= self.propagate(component, current, snapshots=snapshots)
+                        current, m, snapshots = self.propagate(
+                            component, current, snapshots=snapshots
+                        )
                     elif record == "light":
-                        current, m ,_= self.propagate(component, current)
+                        current, m, _ = self.propagate(component, current)
                         snapshots.append(current)
                     else:
-                        current, m ,_= self.propagate(component, current)
+                        current, m, _ = self.propagate(component, current)
                     if isinstance(component, Plane):
                         planes[component.name] = current
+                case FieldSpan():
+                    if record is True:
+                        current, m, snapshots = self.cross(seg, current, snapshots=snapshots)
+                    elif record == "light":
+                        current, m, _ = self.cross(seg, current)
+                        snapshots.append(current)
+                    else:
+                        current, m, _ = self.cross(seg, current)
             if total is not None and m is not None and not (m.higher or total.higher):
                 total = m @ total
             else:
                 total = None
-            
 
         return Trace(
             initial=rays,

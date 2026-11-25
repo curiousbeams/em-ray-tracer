@@ -34,7 +34,10 @@ A checklist of what is implemented, to tick off as work lands. [architecture.md]
 - [ ] Loaders for on-axis profiles, on-axis multipole exports, 2D (r, z) and 3D maps
 - [ ] Smooth (C²) interpolation
 - [ ] `Pose`: a full rigid transform for field components
-- [ ] `FieldSuperposition`: overlapping fields
+- [x] Overlapping components: `OpticalSystem.segments` superposes field components into
+  `FieldSpan`s, places thin components (and the two kicks of a `DoubleDeflector`) inside
+  fields, and clips fields to the traced span. Field misalignment inside a superposed span
+  is not supported yet
 
 ## M5: exact tracers
 

@@ -20,23 +20,25 @@ import torch
 from em_ray_tracer.components.base import ComponentBase
 from em_ray_tracer.fields.analytic import AxialAnalytical, GlaserField, SchiskeField
 from em_ray_tracer.fields.base import AxialField, FieldKind
-from em_ray_tracer.fields.expansion import LaplaceExpansion
 from em_ray_tracer.fields.sampled import SampledAxialField
-from em_ray_tracer.rays import STATE_DIM, Rays
-from em_ray_tracer.system import OpticalSystem
 from em_ray_tracer.transfer_map import TransferMap
 from em_ray_tracer.utilities.utils import as_parameter
 
 
 class FieldComponent(ComponentBase):
-    """Base for elements with an extent and a field to integrate through."""
+    """Base for elements with an extent and a field to integrate through.
+
+    Solvers never cross a field component on its own: the schedule turns the fields into
+    ``FieldSpan`` segments, where every field covering an interval is superposed.
+    """
+
+    is_field = True
 
     def __init__(self, field: AxialField, *, z: float, **kwargs):
         super().__init__(z=z, **kwargs)
         self.field = field
-        self.z_start_rel_cut=None
-        self.z_end_rel_cut=None
-        self.laplace=None
+        self.z_start_rel_cut = None
+        self.z_end_rel_cut = None
 
     @property
     def z_start(self) -> torch.Tensor:
@@ -51,35 +53,18 @@ class FieldComponent(ComponentBase):
         return self.z + self.field.half_extent
 
     @z_start.setter
-    def z_start(self,value) :
-        self.z_start_rel_cut=as_parameter(value)-self.z
+    def z_start(self, value):
+        self.z_start_rel_cut = as_parameter(value) - self.z
 
     @z_end.setter
-    def z_end(self,value) :
-        self.z_end_rel_cut=as_parameter(value)-self.z
-
+    def z_end(self, value):
+        self.z_end_rel_cut = as_parameter(value) - self.z
 
     def axial_derivative(self, n: int, z: torch.Tensor | float) -> dict:
         """The n-th derivative of the axial profile at the absolute position ``z`` (n = 0 is
         the profile). The field's own coordinate is measured from the lens centre."""
         return self.field.derivative(n, z - self.z)
 
-    def axial_laplace(self, order: int = 3, longitudinal_order: int | None = None) -> Callable:
-            """The n-th order laplace expansion of the axial profile at the absolute z position within the complete system.
-            The field's own coordinate is measured from the lens centre.\n
-            Returns a function which takes (x,y,z) and returns the E, B fields\n
-            If the optional voltage is specified it returns E, B, phi_absolute instead"""
-
-            self.laplace=LaplaceExpansion(self.field, component=self, order = order, longitudinal_order = longitudinal_order)
-
-    def field_values(self,x,y,z,voltage = None) -> tuple[torch.Tensor,torch.Tensor]|tuple[torch.Tensor,torch.Tensor,torch.Tensor]:
-        """returns E, B \n
-        If voltage (of the electron) is also specified it returns E, B, Phi instead"""
-        if not self.laplace:
-            raise RuntimeError("call axial_laplace first before using the call function")
-        z_field=z-self.z
-        return self.laplace.evaluate(x,y,z_field,voltage=voltage)
-        
     def config(self):
         raise NotImplementedError("config() for field components is not implemented yet")
 
@@ -93,17 +78,41 @@ class FieldLens(FieldComponent):
         return cls(GlaserField(B0=B0, a=a, extent=extent), z=z, **kwargs)
 
     @classmethod
-    def schiske(cls, k: float, a: float, voltage: float, *, z: float, extent: float = 10.0, **kwargs) -> Self:
+    def schiske(
+        cls, k: float, a: float, voltage: float, *, z: float, extent: float = 10.0, **kwargs
+    ) -> Self:
         """Electrostatic einzel lens with Schiske's potential (see :class:`SchiskeField`)."""
-        return cls(SchiskeField(k=k, a=a, extent=extent,voltage=voltage), z=z, **kwargs)
+        return cls(SchiskeField(k=k, a=a, extent=extent, voltage=voltage), z=z, **kwargs)
 
     @classmethod
-    def from_axial_samples(cls, z_samples, values, *, kind_set: FieldKind|tuple[FieldKind,...], z: float, grounded_check = True,**kwargs) -> Self:
+    def from_axial_samples(
+        cls,
+        z_samples,
+        values,
+        *,
+        kind_set: FieldKind | tuple[FieldKind, ...],
+        z: float,
+        grounded_check=True,
+        **kwargs,
+    ) -> Self:
         """From an on-axis profile exported by an FEM model (``z_samples`` relative to ``z``)."""
-        return cls(SampledAxialField(z_samples, values, kind_set,grounded_check=grounded_check), z=z, **kwargs)
+        return cls(
+            SampledAxialField(z_samples, values, kind_set, grounded_check=grounded_check),
+            z=z,
+            **kwargs,
+        )
 
     @classmethod
-    def from_file_with_axial_samples(cls, path: str, kind_set: FieldKind | tuple[FieldKind, ...],z: float, delimiter: str | None = None, grounded_check = True, B_kwargs: dict = {},**kwargs) -> Self:
+    def from_file_with_axial_samples(
+        cls,
+        path: str,
+        kind_set: FieldKind | tuple[FieldKind, ...],
+        z: float,
+        delimiter: str | None = None,
+        grounded_check=True,
+        B_kwargs: dict = {},
+        **kwargs,
+    ) -> Self:
         """Build a lens from axial field samples stored in a text or CSV file.
 
         The file must have columns ``(z [m], values, ...)``, e.g. a COMSOL
@@ -126,9 +135,9 @@ class FieldLens(FieldComponent):
             Whether to check that the field is grounded at the ends of the
             sampled range.
         B_kwargs : dict
-            Passed to the B-spline fit. 
+            Passed to the B-spline fit.
             See "Other Parameters" below which adjust parameters related to the underlying B-spline interpolation.
-        
+
         Other parameters
         ----------
         order : int, default 5
@@ -146,47 +155,44 @@ class FieldLens(FieldComponent):
         Self
             The lens, whose axial derivatives follow the fitted spline.
         """
-        return cls(SampledAxialField.from_file(path, kind_set, delimiter, grounded_check = grounded_check,**B_kwargs),z=z,**kwargs)
+        return cls(
+            SampledAxialField.from_file(
+                path, kind_set, delimiter, grounded_check=grounded_check, **B_kwargs
+            ),
+            z=z,
+            **kwargs,
+        )
 
-    @classmethod 
-    def from_axial_analytical(cls,
-                              axial:Callable[[torch.Tensor],torch.Tensor],
-                              fieldkind : Literal["electrostatic"]|Literal["magnetic"]|tuple[str,...],
-                              z : float,
-                              half_extent : float,
-                              **kwargs
-                              ) -> Self:
+    @classmethod
+    def from_axial_analytical(
+        cls,
+        axial: Callable[[torch.Tensor], torch.Tensor],
+        fieldkind: Literal["electrostatic"] | Literal["magnetic"] | tuple[str, ...],
+        z: float,
+        half_extent: float,
+        **kwargs,
+    ) -> Self:
         """On-axis profile given as a function of a single (0-d) z.
 
         ``axial`` maps a 0-d tensor z to a 0-d tensor (single field kind) or to a
         tensor of shape (K,) (one entry per name in ``fieldkind``, same order).
         It must be written with torch ops only (no .item(), no in-place ops).
         """
-        return cls(AxialAnalytical(axial=axial,fieldkind=fieldkind,half_extent=half_extent),z=z,**kwargs)
+        return cls(
+            AxialAnalytical(axial=axial, fieldkind=fieldkind, half_extent=half_extent),
+            z=z,
+            **kwargs,
+        )
 
     def local_transfer_map(self, order: int = 1, voltage: float | None = None) -> TransferMap:
         """Constructs local transfer map from the for principal rays.
         order 1 uses paraxial while higher orders use non-paraxial laplace expansion, all use RK4.
-        
+
         Higher order transfer maps may benefit from adjusting r in order to
         asses around a relevant order of magnitude and prevent blow up."""
-        from em_ray_tracer.solvers.ode import ODESolver
-        
-        
-        principal=Rays.principal(z=float(self.z_start),voltage=voltage,r_interest=self.r_interest)
-        system=OpticalSystem.from_components(self)
-        if self.r_interest is not None:
-            scale=self.r_interest
-        else:
-            scale=1
+        from em_ray_tracer.solvers.ode import span_transfer_map
+        from em_ray_tracer.system import FieldSpan
 
-        
-        if order==1:
-            out_rays=ODESolver.paraxial().trace(system, principal).final.state
-        if order > 1:
-            out_rays=ODESolver.nonparaxial(expansion_order=order).trace(system, principal).final.state
-
-        out_states=torch.cat([out_rays[:,:STATE_DIM]/scale,torch.zeros(STATE_DIM).unsqueeze(0)])
-        local_map=TransferMap.from_affine(out_states.mT,torch.zeros(5))
-        return local_map
-        
+        return span_transfer_map(
+            FieldSpan.of(self), order=order, voltage=voltage, r_interest=self.r_interest
+        )

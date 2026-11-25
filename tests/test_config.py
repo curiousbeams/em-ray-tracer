@@ -19,6 +19,7 @@ from em_ray_tracer import (
     ThinLens,
     TransferMatrixSolver,
 )
+from em_ray_tracer.system import Element
 
 
 def test_solver_params_parse_and_build():
@@ -65,12 +66,23 @@ def test_names_are_unique_and_generated():
         system.add(ThinLens(power=1, z=3, name="ThinLens0"))
 
 
-def test_overlapping_extended_components_raise():
-    system = OpticalSystem.from_components(
-        DoubleDeflector((0, 0), z=1.0, z_2=2.0, pivot=3.0), ThinLens(power=1.0, z=1.5)
-    )
+class _Slab(Deflector):
+    """A test-only extended map component that can't be split into thin parts."""
+
+    @property
+    def z_end(self) -> torch.Tensor:
+        return self.z + 1.0
+
+
+def test_overlapping_an_unsplittable_extended_component_raises():
+    system = OpticalSystem.from_components(_Slab((0.0, 0.0), z=1.0), ThinLens(power=1.0, z=1.5))
     with pytest.raises(ValueError, match="Overlapping"):
         system.segments(0.0)
+    with pytest.raises(ValueError, match="straddles"):
+        system.segments(1.5, 3.0)
+    # nothing inside it: crossed whole, as one element
+    system.remove("ThinLens0")
+    assert sum(isinstance(s, Element) for s in system.segments(0.0)) == 1
 
 
 def test_ray_constructors():
