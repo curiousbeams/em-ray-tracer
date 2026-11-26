@@ -12,7 +12,6 @@ import torch
 
 from em_ray_tracer.aberrations.basis import AberrationBasis
 from em_ray_tracer.aberrations.coefficients import AberrationCoefficients
-from em_ray_tracer.aberrations.rotation import larmor_fit
 from em_ray_tracer.optimize.objectives import Evaluation, Objective
 from em_ray_tracer.optimize.params import (
     OptimizerParams,
@@ -25,11 +24,9 @@ from em_ray_tracer.solvers.params import SolverParams, SolverParamsType
 from em_ray_tracer.system import OpticalSystem
 
 
-def _mean_r2(x : torch.Tensor, y : torch.Tensor):
-    r2=torch.var(x)+torch.var(y)
+def _mean_r2(x: torch.Tensor, y: torch.Tensor):
+    r2 = torch.var(x) + torch.var(y)
     return r2
-
-
 
 
 class RayTracer:
@@ -77,33 +74,37 @@ class RayTracer:
     def gaussian_image(self) -> tuple[torch.Tensor, torch.Tensor]:
         """Paraxial ``(z_image, magnification)`` of the plane the rays start from."""
         return self.system.gaussian_image(self.rays.z, voltage=self.rays.voltage)
-    
 
     def fit_aberrations(
         self,
         basis: AberrationBasis | None = None,
         plane: str | None = None,
         trace: Trace | None = None,
-        rotation: torch.Tensor | Literal["larmor","standard"] = "standard"
+        rotation: torch.Tensor | Literal["larmor", "standard"] = "standard",
     ) -> AberrationCoefficients:
-        """Fit ``basis`` (default: axial to third order) to the rays at ``plane``. 
-        The rotation is removed beforehand either by direct fitting using "standard" 
-        or by calculating the larmor rotation from the b-field (first order) using "larmor" """
+        """Fit ``basis`` (default: axial to third order) to the rays at ``plane``.
+
+        The image rotation is removed first: "standard" fits it from the rays (defined modulo
+        pi), "larmor" takes the paraxial Larmor angle of the fields between the rays' start and
+        the plane (``OpticalSystem.larmor_angle``, the full angle), and a tensor is used as
+        given.
+        """
         trace = trace or self.trace()
-        if rotation == "larmor":
-            z_out=trace.final.z if plane is None else trace.planes[plane].z
-            z_set, phi_set, b_set=self.system.fields(z_start=trace.initial.z, z_end=z_out)
-            if not b_set.any():
-                rotation="standard"
-                warnings.warn("system has no magnetic field to retrieve larmor rotation from, " \
-                "used standard rotation fitter instead")
-            else :
-                voltage=trace.initial.voltage
-                #z_imag, magnification=self.system.gaussian_image(z_object=trace.initial.z,voltage=voltage)
-                #argument=magnification.angle()
-                rotation=larmor_fit(z_set,phi_set,b_set,voltage=voltage)
-                #print(f"from the gaussian {argument} rad at z_img {z_i} was found while from larmor fit {rotation} rad was found")
-        return AberrationCoefficients.from_trace(trace, basis or AberrationBasis.axial(), plane,rotation=rotation)
+        if isinstance(rotation, str) and rotation == "larmor":
+            z_out = trace.final.z if plane is None else trace.planes[plane].z
+            if not self.system.has_magnetic_field(trace.initial.z, z_out):
+                rotation = "standard"
+                warnings.warn(
+                    "system has no magnetic field to retrieve larmor rotation from, "
+                    "used standard rotation fitter instead"
+                )
+            else:
+                rotation = self.system.larmor_angle(
+                    trace.initial.z, z_out, voltage=trace.initial.voltage
+                )
+        return AberrationCoefficients.from_trace(
+            trace, basis or AberrationBasis.axial(), plane, rotation=rotation
+        )
 
     # endregion --- forward ---
 

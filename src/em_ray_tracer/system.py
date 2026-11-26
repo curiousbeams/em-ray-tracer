@@ -387,8 +387,9 @@ class OpticalSystem(nn.Module, OptimizerMixin):
     def fields(self, z_start: torch.Tensor | float, z_end: torch.Tensor | float):
         """The superposed axial fields from ``z_start`` to ``z_end``, as ``(z, phi, B)``.
 
-        Field spans are sampled at 1000 points each and hold the summed profiles; gaps and thin
-        components contribute zeros at their ends.
+        Field spans are sampled at 1000 points each and hold the summed profiles; gaps give
+        zeros at their ends. Thin components add no samples: one inside a field must not show
+        as a dip to zero, and one in a gap is already covered by the gap's zeros.
         """
         phi_space = []
         b_space = []
@@ -397,10 +398,6 @@ class OpticalSystem(nn.Module, OptimizerMixin):
             match seg:
                 case Gap(z0, z1):
                     z_space.append(torch.stack([z0, z1]).to(DTYPE))
-                    phi_space.append(torch.zeros(2, dtype=DTYPE))
-                    b_space.append(torch.zeros(2, dtype=DTYPE))
-                case Element(c):
-                    z_space.append(torch.stack([c.z_start, c.z_end]).to(DTYPE))
                     phi_space.append(torch.zeros(2, dtype=DTYPE))
                     b_space.append(torch.zeros(2, dtype=DTYPE))
                 case FieldSpan(z0, z1):
@@ -414,6 +411,47 @@ class OpticalSystem(nn.Module, OptimizerMixin):
         phi_space = torch.cat(phi_space)
         b_space = torch.cat(b_space)
         return z_space, phi_space, b_space
+
+    def larmor_angle(
+        self,
+        z_start: torch.Tensor | float,
+        z_end: torch.Tensor | float,
+        voltage: float,
+        points: int = 2001,
+    ) -> torch.Tensor:
+        """The paraxial image rotation from ``z_start`` to ``z_end``,
+        theta = integral of eta B / (2 sqrt(phi_hat)) dz over the superposed fields, with
+        phi_hat taken at the local potential. The full angle, not wrapped.
+
+        Simpson's rule on ``points`` samples per field span, from the spans' own profiles.
+        Gaps and thin components add nothing.
+        """
+        from em_ray_tracer.constants import ETA, relativistic_potential
+
+        if points % 2 == 0:
+            raise ValueError("Simpson's rule needs an odd number of points")
+        weights = torch.ones(points, dtype=DTYPE)
+        weights[1:-1:2], weights[2:-1:2] = 4.0, 2.0
+        steps = torch.linspace(0.0, 1.0, points, dtype=DTYPE)
+        theta = torch.zeros((), dtype=DTYPE)
+        for seg in self.segments(z_start=z_start, z_end=z_end):
+            if not isinstance(seg, FieldSpan) or "magnetic" not in seg.kinds:
+                continue
+            z = seg.z0 + (seg.z1 - seg.z0) * steps
+            profile = seg.axial_derivative(0, z)
+            phi = voltage + profile.get("electrostatic", torch.zeros_like(z))
+            rate = ETA * profile["magnetic"] / (2 * torch.sqrt(relativistic_potential(phi)))
+            theta = theta + (seg.z1 - seg.z0) / (3 * (points - 1)) * (weights * rate).sum()
+        return theta
+
+    def has_magnetic_field(
+        self, z_start: torch.Tensor | float, z_end: torch.Tensor | float
+    ) -> bool:
+        """Whether any magnetic field acts between ``z_start`` and ``z_end``."""
+        return any(
+            isinstance(seg, FieldSpan) and "magnetic" in seg.kinds
+            for seg in self.segments(z_start=z_start, z_end=z_end)
+        )
 
     # endregion --- fields ---
 

@@ -13,14 +13,17 @@ A ``FieldLens`` occupies [z - half_extent, z + half_extent]. Solvers handle it i
 The field's own z coordinate is measured from the lens centre ``z``.
 """
 
+import math
 from typing import Callable, Literal, Self
 
 import torch
 
 from em_ray_tracer.components.base import ComponentBase
+from em_ray_tracer.constants import DTYPE
 from em_ray_tracer.fields.analytic import AxialAnalytical, GlaserField, SchiskeField
 from em_ray_tracer.fields.base import AxialField, FieldKind
 from em_ray_tracer.fields.sampled import SampledAxialField
+from em_ray_tracer.fields.taper import smoothstep
 from em_ray_tracer.transfer_map import TransferMap
 from em_ray_tracer.utilities.utils import as_parameter
 
@@ -30,13 +33,25 @@ class FieldComponent(ComponentBase):
 
     Solvers never cross a field component on its own: the schedule turns the fields into
     ``FieldSpan`` segments, where every field covering an interval is superposed.
+
+    The profile falls smoothly to zero at the extent: over the outer ``taper`` fraction of the
+    half-extent it is multiplied by a C^9 window (``fields.taper``). A field cut off at a
+    nonzero value would give rays a spurious rotation at the cut. ``taper=0`` keeps the hard
+    cut. In the core, the profile is the field's own.
+
+    The default, 0.4 (a Glaser field is untouched within 6a), is wide enough that the window's
+    derivatives stay on the scale of the tail's own: at 0.2 they inflate the fitted C70 of a
+    Glaser lens fifteenfold and spread C30 across expansion orders by 2e-4, against 1e-6 here.
     """
 
     is_field = True
 
-    def __init__(self, field: AxialField, *, z: float, **kwargs):
+    def __init__(self, field: AxialField, *, z: float, taper: float = 0.4, **kwargs):
         super().__init__(z=z, **kwargs)
+        if not 0.0 <= taper <= 1.0:
+            raise ValueError(f"taper is a fraction of the half-extent in [0, 1], got {taper}")
         self.field = field
+        self.taper = float(taper)
         self.z_start_rel_cut = None
         self.z_end_rel_cut = None
 
@@ -62,8 +77,22 @@ class FieldComponent(ComponentBase):
 
     def axial_derivative(self, n: int, z: torch.Tensor | float) -> dict:
         """The n-th derivative of the axial profile at the absolute position ``z`` (n = 0 is
-        the profile). The field's own coordinate is measured from the lens centre."""
-        return self.field.derivative(n, z - self.z)
+        the profile), tapered at the ends. The field's own coordinate is measured from the lens
+        centre."""
+        zeta = torch.as_tensor(z, dtype=DTYPE) - self.z
+        half = float(self.field.half_extent)
+        width = self.taper * half
+        if width == 0 or bool((zeta.detach().abs() <= half - width).all()):
+            return self.field.derivative(n, zeta)  # all in the core: the window is 1
+        # (f w)^(n) = sum_k C(n, k) f^(k) w^(n-k), with w(zeta) = S(t), t = (half - |zeta|) / width
+        t = (half - zeta.abs()) / width
+        slope = -torch.sign(zeta) / width  # dt/dzeta
+        window = [smoothstep(m, t) * slope**m for m in range(n + 1)]
+        parts = [self.field.derivative(k, zeta) for k in range(n + 1)]
+        return {
+            kind: sum(math.comb(n, k) * parts[k][kind] * window[n - k] for k in range(n + 1))
+            for kind in parts[0]
+        }
 
     def config(self):
         raise NotImplementedError("config() for field components is not implemented yet")

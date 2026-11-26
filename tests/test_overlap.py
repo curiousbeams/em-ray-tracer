@@ -76,6 +76,17 @@ def test_fields_reaching_past_the_span_are_clipped():
     assert (float(span.z0), float(span.z1)) == (-0.01, 0.01)
 
 
+def test_field_profile_has_no_dips_at_thin_elements_inside_fields():
+    lens = FieldLens.glaser(**GLASER, z=0.0)
+    with_planes = OpticalSystem.from_components(
+        lens, Plane(z=-1e-3, name="P1"), Plane(z=2e-3, name="P2")
+    )
+    z, _, b = with_planes.fields(-0.02, 0.02)
+    assert float(b.min()) > 0
+    exact = GLASER["B0"] / (1 + (z / GLASER["a"]) ** 2)
+    torch.testing.assert_close(b, exact, rtol=1e-12, atol=0)
+
+
 # --- superposition ---
 
 
@@ -130,7 +141,7 @@ def test_superposed_misaligned_fields_raise_under_transfer_matrices():
 
 def test_plane_inside_a_lens_records_the_closed_form_ray():
     lens = FieldLens.glaser(**GLASER, z=0.0)
-    z0, zp = float(lens.z_start), 3e-3
+    z0, zp = -(1 - lens.taper) * lens.field.half_extent, 3e-3  # start in the untapered core
     system = OpticalSystem.from_components(lens, Plane(z=zp, name="inside"))
     state = torch.tensor([[1e-3, 0, 0, 0], [1e-3, -1e-3, 5e-3, 1e-3]], dtype=DTYPE)
     rays = Rays.from_state(state, z=z0, voltage=VOLTAGE)

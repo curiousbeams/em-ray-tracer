@@ -32,7 +32,7 @@ def trace_through(lens, state, voltage):
 def test_electrostatic_wronskian_is_conserved():
     # sqrt(phi_hat) (x1 x2' - x2 x1') is invariant under the paraxial equation. A Schiske
     # lens's span is symmetric, so phi_hat is the same at both ends, and so is the Wronskian.
-    lens = FieldLens.schiske(k=0.6, a=A,voltage=volt, z=0.0)
+    lens = FieldLens.schiske(k=0.6, a=A, voltage=volt, z=0.0)
     out = trace_through(lens, [[1e-4, 0, 0, 0], [0, 1e-3, 0, 0]], voltage=volt)
     wronskian = out.x[0] * out.xp[1] - out.x[1] * out.xp[0]
     assert wronskian.item() == pytest.approx(1e-4 * 1e-3, rel=1e-9)
@@ -44,7 +44,7 @@ def test_weak_schiske_lens_power():
     # lens R stays nearly constant, so a ray that enters parallel leaves with
     # -x'/x = integral of T + (1/2) phi_hat'/phi_hat at the exit. The last term is there
     # because the span ends where the field has not quite vanished.
-    lens = FieldLens.schiske(k=0.1, a=A,voltage=volt, z=0.0)
+    lens = FieldLens.schiske(k=0.1, a=A, voltage=volt, z=0.0)
     out = trace_through(lens, [[1e-3, 0, 0, 0]], volt)
     z = torch.linspace(float(lens.z_start), float(lens.z_end), 200_001, dtype=DTYPE)
     with torch.no_grad():
@@ -65,6 +65,7 @@ def test_magnetic_rotation_follows_larmor_angle():
     s = ETA / math.sqrt(relativistic_potential(voltage))
     rate = s * lens.axial_derivative(0, lens.z_start)["magnetic"] / 2
     out = trace_through(lens, [[1e-3, 0, 0, rate * 1e-3]], voltage)
-    u0, u1 = float(lens.z_start) / A, float(lens.z_end) / A
-    theta = s * B0 * A / 2 * (math.atan(u1) - math.atan(u0))
+    theta = float(
+        OpticalSystem.from_components(lens).larmor_angle(lens.z_start, lens.z_end, voltage)
+    )
     assert math.atan2(out.y[0].item(), out.x[0].item()) == pytest.approx(theta, rel=1e-8)

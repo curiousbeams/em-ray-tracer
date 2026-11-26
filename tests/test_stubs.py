@@ -49,16 +49,20 @@ def test_glaser_derivatives_match_finite_differences():
     field = GlaserField(**GLASER)
     z = torch.linspace(-0.05, 0.05, 101, dtype=torch.float64)
     h = 1e-6
-    fd = (field.derivative(0, z + h)["magnetic"] - field.derivative(0, z - h)["magnetic"]) / (2 * h)
+    fd = (field.derivative(0, z + h)["magnetic"] - field.derivative(0, z - h)["magnetic"]) / (
+        2 * h
+    )
     torch.testing.assert_close(field.derivative(1, z)["magnetic"], fd, rtol=1e-6, atol=1e-9)
 
 
 def test_paraxial_glaser_matches_closed_form():
-    # The lens is displaced, to check that its position is honoured. Compare at the end of its
-    # span: the closed form keeps the field's tail beyond it, while the tracer drifts there.
+    # The lens is displaced, to check that its position is honoured. Start and compare at the
+    # ends of the untapered core: the closed form is the pure Glaser field, the tracer's tapers
+    # to zero beyond the core. Rays may start inside the field.
     z_offset = 1.0
     lens = FieldLens.glaser(**GLASER, z=z_offset)
-    z0, z1 = float(lens.z_start), float(lens.z_end)
+    core = (1 - lens.taper) * lens.field.half_extent  # the profile is pure Glaser within it
+    z0, z1 = z_offset - core, z_offset + core
     system = OpticalSystem.from_components(lens, Plane(z=z1, name="out"))
     state = [[1e-3, 0, 0, 0], [0, 1e-3, 0, 0], [1e-3, -1e-3, 5e-3, 1e-3]]
     rays = Rays.from_state(torch.tensor(state, dtype=DTYPE), z=z0, voltage=VOLTAGE)
@@ -77,7 +81,6 @@ def test_paraxial_glaser_matches_closed_form():
         assert r == pytest.approx(abs(exact(z1 - z_offset)), rel=1e-8)
 
 
-
 def test_weak_glaser_lens_approaches_thin_lens_power():
     # 1/f -> eta^2 B0^2 pi a / (8 phi_hat) as B0 -> 0
     a, B0 = 0.0075, 1e-3
@@ -92,7 +95,7 @@ def test_thick_lens_matrix_matches_ode_trace():
     lens = FieldLens.glaser(**GLASER, z=0.0)
     system = OpticalSystem.from_components(lens, Plane(z=0.1, name="out"))
     rays = Rays.from_cone(1e-1, z=float(lens.z_start), voltage=VOLTAGE)
-    tm = TransferMatrixSolver(order=3,r_interest=1e-9).trace(system, rays).final.state
+    tm = TransferMatrixSolver(order=3, r_interest=1e-9).trace(system, rays).final.state
     ode = ODESolver.paraxial().trace(system, rays).final.state
 
     torch.testing.assert_close(tm, ode, rtol=1e-8, atol=1e-12)
@@ -104,7 +107,7 @@ def test_laplace_expansion_divergence_identity():
     x = torch.tensor([1e-3], dtype=torch.float64, requires_grad=True)
     y = torch.tensor([5e-4], dtype=torch.float64, requires_grad=True)
     z = torch.tensor([2e-3], dtype=torch.float64, requires_grad=True)
-    _, B ,_= expansion.evaluate(x, y, z)
+    _, B, _ = expansion.evaluate(x, y, z)
     div = sum(
         torch.autograd.grad(B[..., i].sum(), v, create_graph=True)[0]
         for i, v in enumerate((x, y, z))
@@ -113,12 +116,13 @@ def test_laplace_expansion_divergence_identity():
     expected = -1 / (2**6 * 36) * r2**3 * field.derivative(7, z)["magnetic"]
     torch.testing.assert_close(div, expected, rtol=1e-6, atol=0)
 
+
 @stub
 def test_quadrupole_matches_multipole_4():
-    p=1
-    ori=0
-    state=torch.as_tensor([3,1,2,1,0],dtype=DTYPE)
+    p = 1
+    ori = 0
+    state = torch.as_tensor([3, 1, 2, 1, 0], dtype=DTYPE)
 
-    quad=quadrupole_map(p,orientation=ori)
-    multi=multipole_map(p,order=2,orientation=ori)
-    torch.testing.assert_close(quad.apply(state=state),multi.apply(state=state))
+    quad = quadrupole_map(p, orientation=ori)
+    multi = multipole_map(p, order=2, orientation=ori)
+    torch.testing.assert_close(quad.apply(state=state), multi.apply(state=state))

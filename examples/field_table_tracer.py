@@ -11,8 +11,9 @@ with S = s B / B0, S' = s B' / B0, s = eta / sqrt(phi_hat), D = gamma phi' / (2 
 L = gamma phi'' / (4 phi_hat). ``coefficients`` computes them on any tensor of z.
 ``CoefficientTable`` calls it once on the whole grid, and its ``at(z)`` returns the row for z,
 so the right-hand side is per-ray arithmetic only. The lens is a Glaser magnetic field and a
-Schiske einzel field with a common centre; the table holds their combined effect and does not
-record which field each part came from.
+Schiske einzel field with a common centre, as the package's field lenses define them (tapered to
+zero at their extent); the table holds their combined effect and does not record which field
+each part came from.
 
 Two more things are batched:
 
@@ -37,7 +38,6 @@ import torch
 
 from em_ray_tracer import FieldLens, OpticalSystem, Rays
 from em_ray_tracer.constants import DTYPE, ETA, lorentz_factor, relativistic_potential
-from em_ray_tracer.fields.analytic import GlaserField, SchiskeField
 from em_ray_tracer.rays import XP, YP, X, Y
 from em_ray_tracer.solvers.integrators import rk4_step
 from em_ray_tracer.solvers.ode import ODESolver, state_derivative
@@ -48,9 +48,9 @@ A = 4e-3  # half-width of both fields [m]
 FOCUS = 20e-3  # where the parallel beam should first cross the axis [m]
 DZ = 10e-6  # RK4 step [m]
 
-MAGNETIC = GlaserField(B0=1.0, a=A)  # per tesla: the right-hand side scales it by B0
-ELECTROSTATIC = SchiskeField(k=0.5, a=A, voltage=VOLTAGE)
-Z_START, Z_END = -MAGNETIC.half_extent, MAGNETIC.half_extent
+MAGNETIC = FieldLens.glaser(B0=1.0, a=A, z=0.0)  # per tesla: the right-hand side scales it by B0
+ELECTROSTATIC = FieldLens.schiske(k=0.5, a=A, voltage=VOLTAGE, z=0.0)
+Z_START, Z_END = float(MAGNETIC.z_start), float(MAGNETIC.z_end)
 
 
 def coefficients(z: torch.Tensor, magnetic=MAGNETIC, electrostatic=ELECTROSTATIC) -> torch.Tensor:
@@ -60,10 +60,12 @@ def coefficients(z: torch.Tensor, magnetic=MAGNETIC, electrostatic=ELECTROSTATIC
     phi = VOLTAGE + zero
     with torch.no_grad():
         if magnetic is not None:
-            b, db = magnetic.derivative(0, z)["magnetic"], magnetic.derivative(1, z)["magnetic"]
+            b = magnetic.axial_derivative(0, z)["magnetic"]
+            db = magnetic.axial_derivative(1, z)["magnetic"]
         if electrostatic is not None:
-            phi = phi + electrostatic.derivative(0, z)["electrostatic"]
-            dphi, d2phi = electrostatic.derivative(1, z)["electrostatic"], electrostatic.derivative(2, z)["electrostatic"]
+            phi = phi + electrostatic.axial_derivative(0, z)["electrostatic"]
+            dphi = electrostatic.axial_derivative(1, z)["electrostatic"]
+            d2phi = electrostatic.axial_derivative(2, z)["electrostatic"]
     phi_hat, gamma = relativistic_potential(phi), lorentz_factor(phi)
     s = ETA / phi_hat.sqrt()
     damping, lens = gamma * dphi / (2 * phi_hat), gamma * d2phi / (4 * phi_hat)
@@ -169,12 +171,9 @@ print(
 )
 
 # A bundle in the x-z plane, x from -1 to 1 mm, which the lens rotates out of that plane. The
-# field at the start is still 1% of its peak, so a ray parallel in the lab frame would carry
-# angular momentum and miss the axis. Give each ray the slope of one that entered from
-# field-free space instead: it turns at the Larmor rate, theta' = B0 S / 2.
-state = Rays.from_parallel(1e-3, 9).state.clone()
-state[:, YP] = B0 * table.values[0, 0] / 2 * state[:, X]
-rays = Rays.from_state(state, z=Z_START, voltage=VOLTAGE)
+# field is zero where the rays start, so rays parallel in the lab frame carry no angular
+# momentum and all cross the axis at the focus.
+rays = Rays.from_parallel(1e-3, 9, z=Z_START, voltage=VOLTAGE)
 t_table, trace = timed(lambda: integrate(lab_frame(table.at, B0), rays.state, table, record=True))
 at_focus = trace[table.index(FOCUS) // 2]
 spot = float(torch.hypot(at_focus[:, X], at_focus[:, Y]).max())
@@ -194,7 +193,7 @@ print(
 package = ODESolver.paraxial(IntegratorParams.RK4(dz=DZ))
 checks = (
     ("Glaser", FieldLens.glaser(B0=B0, a=A, z=0.0), dict(electrostatic=None)),
-    ("Schiske", FieldLens(ELECTROSTATIC, z=0.0), dict(magnetic=None)),
+    ("Schiske", ELECTROSTATIC, dict(magnetic=None)),
 )
 for name, lens, only in checks:
     alone = CoefficientTable.build(Z_START, Z_END, DZ, **only)
