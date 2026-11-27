@@ -67,18 +67,23 @@ class Trajectory:
 
             x_spline=b_spline(z,x,order=1,window_size=2)
             y_spline=b_spline(z,y,order=1,window_size=2)
-            n_points=(domain[1]-domain[0])/dz + 1
+            n_points=((domain[1]-domain[0])/dz + 1).clip(max=1000)
             z_domain=torch.linspace(domain[0],domain[1],int(n_points),dtype=DTYPE)
 
             r2=torch.var(x_spline(0,z_domain),dim=-1)+torch.var(y_spline(0,z_domain),dim=-1)
             polc_arg=torch.argmin(r2)
 
             # extra refinement
-            z_domain2=torch.linspace(z_domain[polc_arg-1],z_domain[polc_arg+1],int(n_points),dtype=DTYPE)
-            r2=torch.var(x_spline(0,z_domain2),dim=-1)+torch.var(y_spline(0,z_domain2),dim=-1)
-            polc_arg=torch.argmin(r2)
+            for _ in range(10):
+                z_domain=torch.linspace(z_domain[polc_arg-1],z_domain[polc_arg+1],int(n_points),dtype=DTYPE)
+                r2=torch.var(x_spline(0,z_domain),dim=-1)+torch.var(y_spline(0,z_domain),dim=-1)
+                polc_arg=torch.argmin(r2)
+                error=(r2[polc_arg+1]-r2[polc_arg]).abs()+(r2[polc_arg-1]-r2[polc_arg]).abs()
+                if error <1e-20:
+                    print("cut")
+                    break
 
-            self._polc=z_domain2[polc_arg], torch.sqrt(r2[polc_arg])
+            self._polc=z_domain[polc_arg], torch.sqrt(r2[polc_arg])
         return self._polc
             
 
